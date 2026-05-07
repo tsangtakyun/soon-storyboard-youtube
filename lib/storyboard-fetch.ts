@@ -46,6 +46,39 @@ export async function fetchStoryboardByScriptId(
   }
 }
 
+export async function fetchStoryboardById(
+  storyboardId: string
+): Promise<Storyboard | null> {
+  const supabase = getSupabaseServer()
+  const { data: storyboard, error } = await supabase
+    .from('storyboards')
+    .select('*')
+    .eq('id', storyboardId)
+    .single()
+
+  if (error || !storyboard) return null
+
+  const { data: shots, error: shotsError } = await supabase
+    .from('storyboard_shots')
+    .select('*')
+    .eq('storyboard_id', storyboard.id)
+    .order('display_order', { ascending: true })
+
+  if (shotsError) {
+    throw new Error(shotsError.message)
+  }
+
+  return {
+    id: storyboard.id,
+    scriptId: storyboard.script_id,
+    title: storyboard.title ?? undefined,
+    status: storyboard.status,
+    shots: (shots ?? []).map(mapShotRow),
+    createdAt: storyboard.created_at,
+    updatedAt: storyboard.updated_at,
+  }
+}
+
 export async function fetchScriptByStoryboard(
   storyboardId: string
 ): Promise<Script | null> {
@@ -88,6 +121,38 @@ export async function createStoryboard(scriptId: string): Promise<string> {
     .eq('id', scriptId)
 
   return data.id
+}
+
+export async function ensureStoryboardForScript(
+  scriptId: string
+): Promise<Storyboard> {
+  const existing = await fetchStoryboardByScriptId(scriptId)
+  if (existing) return existing
+
+  const storyboardId = await createStoryboard(scriptId)
+  const created = await fetchStoryboardById(storyboardId)
+  if (created) return created
+
+  const supabase = getSupabaseServer()
+  const { data: row, error } = await supabase
+    .from('storyboards')
+    .select('*')
+    .eq('id', storyboardId)
+    .single()
+
+  if (error || !row) {
+    throw new Error(error?.message ?? 'Storyboard created but could not be read')
+  }
+
+  return {
+    id: row.id,
+    scriptId: row.script_id,
+    title: row.title ?? undefined,
+    status: row.status,
+    shots: [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
 }
 
 function mapScriptRow(row: any): Script {

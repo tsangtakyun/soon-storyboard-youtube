@@ -3,9 +3,8 @@ import { notFound } from 'next/navigation'
 import { StoryboardClient } from './StoryboardClient'
 import { fetchFootageSources, fetchVisualModes } from '@/lib/layer-2-reader'
 import {
-  createStoryboard,
+  ensureStoryboardForScript,
   fetchScript,
-  fetchStoryboardByScriptId,
 } from '@/lib/storyboard-fetch'
 
 export const dynamic = 'force-dynamic'
@@ -53,21 +52,7 @@ export default async function StoryboardPage({
   if (!script) notFound()
 
   try {
-    let storyboard = await fetchStoryboardByScriptId(params.scriptId)
-    if (!storyboard) {
-      await createStoryboard(params.scriptId)
-      storyboard = await fetchStoryboardByScriptId(params.scriptId)
-    }
-
-    if (!storyboard) {
-      return (
-        <ErrorPanel
-          title="已找到 script，但建立 storyboard 失敗"
-          message="系統讀到 script，但未能建立或讀取 storyboard row。請打開 debug link 檢查 storyboards / storyboard_shots table 狀態。"
-          scriptId={params.scriptId}
-        />
-      )
-    }
+    const storyboard = await ensureStoryboardForScript(params.scriptId)
 
     const [visualModes, footageSources] = await Promise.all([
       fetchVisualModes(),
