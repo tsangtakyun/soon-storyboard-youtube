@@ -59,6 +59,16 @@ export async function GET(request: Request) {
     .select('id')
     .limit(1)
 
+  const { data: storyboardsData, error: storyboardsError } = await supabase
+    .from('storyboards')
+    .select('id, script_id')
+    .limit(1)
+
+  const { data: shotsData, error: shotsError } = await supabase
+    .from('storyboard_shots')
+    .select('id, storyboard_id')
+    .limit(1)
+
   const { count: visualModeCount, error: visualModesError } = await supabase
     .from('layer_2_visual_modes')
     .select('id', { count: 'exact', head: true })
@@ -68,6 +78,7 @@ export async function GET(request: Request) {
     .select('id', { count: 'exact', head: true })
 
   let scriptLookup = null
+  let storyboardLookup = null
   if (scriptId) {
     const { data, error } = await supabase
       .from('scripts')
@@ -81,22 +92,43 @@ export async function GET(request: Request) {
       script: data ?? null,
       error: serializeError(error),
     }
+
+    const { data: storyboard, error: storyboardError } = await supabase
+      .from('storyboards')
+      .select('id, script_id, title, status')
+      .eq('script_id', scriptId)
+      .maybeSingle()
+
+    storyboardLookup = {
+      found: Boolean(storyboard),
+      storyboard: storyboard ?? null,
+      error: serializeError(storyboardError),
+    }
   }
 
   return NextResponse.json({
     success:
       !scriptsError &&
+      !storyboardsError &&
+      !shotsError &&
       !visualModesError &&
       !footageSourcesError &&
       (!scriptId || scriptLookup?.found),
     env,
     scriptsTableVisible: !scriptsError,
+    storyboardsTableVisible: !storyboardsError,
+    storyboardShotsTableVisible: !shotsError,
     scriptsSampleCount: scriptsData?.length ?? 0,
+    storyboardsSampleCount: storyboardsData?.length ?? 0,
+    storyboardShotsSampleCount: shotsData?.length ?? 0,
     visualModeCount,
     footageSourceCount,
     scriptLookup,
+    storyboardLookup,
     errors: {
       scripts: serializeError(scriptsError),
+      storyboards: serializeError(storyboardsError),
+      storyboardShots: serializeError(shotsError),
       visualModes: serializeError(visualModesError),
       footageSources: serializeError(footageSourcesError),
     },
