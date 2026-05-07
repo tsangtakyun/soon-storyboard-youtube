@@ -1,0 +1,28 @@
+:root {
+  --bg: #101422;
+  --panel: #171d31;
+  --line: #2a3148;
+  --ink: #f5f7ff;
+  --muted: #9ba7cf;
+  --accent: #95b8ff;
+  --accent-2: #4ee29a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+a {
+  color: inherit;
+}
+
+main {
+  min-height: 100vh;
+}
