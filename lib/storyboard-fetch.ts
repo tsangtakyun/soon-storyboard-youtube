@@ -46,6 +46,20 @@ export async function fetchStoryboardByScriptId(
   }
 }
 
+export async function fetchScriptByStoryboard(
+  storyboardId: string
+): Promise<Script | null> {
+  const supabase = getSupabaseServer()
+  const { data, error } = await supabase
+    .from('storyboards')
+    .select('script_id')
+    .eq('id', storyboardId)
+    .single()
+
+  if (error || !data?.script_id) return null
+  return fetchScript(data.script_id)
+}
+
 export async function createStoryboard(scriptId: string): Promise<string> {
   const supabase = getSupabaseServer()
   const { data: script } = await supabase
@@ -95,7 +109,7 @@ function mapScriptRow(row: any): Script {
   }
 }
 
-function mapShotRow(row: any): StoryboardShot {
+export function mapShotRow(row: any): StoryboardShot {
   return {
     id: row.id,
     storyboardId: row.storyboard_id,

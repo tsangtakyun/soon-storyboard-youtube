@@ -68,6 +68,8 @@ export interface VisualMode {
   labelZh: string
   labelEn: string
   description: string
+  defaultPartPairings?: ScriptPartRole[]
+  defaultSourcePriority?: FootageSourceSlug[]
   displayOrder: number
 }
 
@@ -96,6 +98,20 @@ export interface StoryboardShot {
   notes?: string
   createdAt: string
   updatedAt: string
+}
+
+export type StoryboardShotDraft = Omit<
+  StoryboardShot,
+  'id' | 'storyboardId' | 'createdAt' | 'updatedAt'
+>
+
+export interface StoryboardShotUpdate {
+  description?: string
+  visualModeSlug?: VisualModeSlug
+  footageSourceSlug?: FootageSourceSlug
+  durationSeconds?: number | null
+  stockKeyword?: string | null
+  notes?: string | null
 }
 
 export interface Storyboard {
