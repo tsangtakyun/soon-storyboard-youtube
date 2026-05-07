@@ -60,9 +60,7 @@ export function StoryboardClient({
   visualModes,
   footageSources,
 }: StoryboardClientProps) {
-  const [shots, setShots] = useState<StoryboardShot[]>(
-    sortShots(storyboard.shots)
-  )
+  const [shots, setShots] = useState<StoryboardShot[]>(sortShots(storyboard.shots))
   const [loading, setLoading] = useState(false)
   const [savingShotId, setSavingShotId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -92,6 +90,25 @@ export function StoryboardClient({
       throw new Error(data.error ?? '載入 shots 失敗')
     }
     setShots(sortShots(data.shots))
+  }
+
+  async function handleAIGenerate() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/storyboards/${storyboard.id}/generate-ai`, {
+        method: 'POST',
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error ?? 'AI 生成 storyboard 失敗')
+      }
+      setShots(sortShots(data.shots))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'AI 生成 storyboard 失敗')
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleSeed() {
@@ -184,9 +201,7 @@ export function StoryboardClient({
 
   function handleServerUpdate(updatedShot: StoryboardShot) {
     setShots((current) =>
-      sortShots(
-        current.map((shot) => (shot.id === updatedShot.id ? updatedShot : shot))
-      )
+      sortShots(current.map((shot) => (shot.id === updatedShot.id ? updatedShot : shot)))
     )
     setSavingShotId(null)
   }
@@ -257,21 +272,31 @@ export function StoryboardClient({
             </div>
 
             {shots.length === 0 && (
-              <button
-                type="button"
-                style={buttonStyle}
-                onClick={handleSeed}
-                disabled={loading}
-              >
-                {loading ? '生成中...' : '用 Layer 2 default 生成初始 shots'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  style={buttonStyle}
+                  onClick={handleAIGenerate}
+                  disabled={loading}
+                >
+                  {loading ? 'AI 生成中（30-60 秒）...' : 'AI 生成 storyboard'}
+                </button>
+                <button
+                  type="button"
+                  style={{ ...buttonStyle, background: '#202842' }}
+                  onClick={handleSeed}
+                  disabled={loading}
+                >
+                  用 Layer 2 default 生成
+                </button>
+              </div>
             )}
           </div>
 
           {shots.length === 0 ? (
             <p style={{ color: 'var(--muted)', lineHeight: 1.7 }}>
-              呢個 storyboard 暫時未有 shot。撳上面個 button，系統會根據 Layer 2
-              visual mode / footage source mapping 生成第一版。
+              呢個 storyboard 暫時未有 shot。建議先用 AI 生成 content-aware
+              storyboard；如果 Anthropic key 未設定，可以用 Layer 2 default fallback。
             </p>
           ) : (
             <div style={{ display: 'grid', gap: 14, marginTop: 16 }}>

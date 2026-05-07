@@ -99,6 +99,8 @@ export async function generateDefaultShots(
         displayOrder,
         partOrder: index,
         description: createDescription(part.content, index, shotCount),
+        scriptExcerpt: createDescription(part.content, index, shotCount),
+        visualInstruction: '按讀稿內容設計對應畫面。',
         visualModeSlug,
         footageSourceSlug,
         durationSeconds,

@@ -13,6 +13,16 @@ export function mapShotUpdate(body: Record<string, unknown>) {
   }
 
   if ('description' in body) update.description = String(body.description ?? '')
+  if ('scriptExcerpt' in body) update.script_excerpt = body.scriptExcerpt || null
+  if ('script_excerpt' in body) update.script_excerpt = body.script_excerpt || null
+  if ('visualInstruction' in body) {
+    update.visual_instruction = body.visualInstruction || null
+  }
+  if ('visual_instruction' in body) {
+    update.visual_instruction = body.visual_instruction || null
+  }
+  if ('contentTypeSlug' in body) update.content_type_slug = body.contentTypeSlug || null
+  if ('content_type_slug' in body) update.content_type_slug = body.content_type_slug || null
   if ('visualModeSlug' in body) update.visual_mode_slug = body.visualModeSlug
   if ('visual_mode_slug' in body) update.visual_mode_slug = body.visual_mode_slug
   if ('footageSourceSlug' in body) {

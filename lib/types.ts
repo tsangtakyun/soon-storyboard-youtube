@@ -32,6 +32,20 @@ export type VisualModeSlug =
   | 'data_viz'
   | 'verite'
 
+export type ContentTypeSlug =
+  | 'statistic'
+  | 'historical_event'
+  | 'spatial_mechanism'
+  | 'geography_location'
+  | 'document_quote'
+  | 'abstract_emotion'
+  | 'host_thesis'
+  | 'urban_life'
+  | 'system_pattern'
+  | 'organic_moment'
+  | 'comparison_contrast'
+  | 'process_procedure'
+
 export interface ScriptPart {
   id?: string
   role: ScriptPartRole
@@ -88,6 +102,9 @@ export interface StoryboardShot {
   displayOrder: number
   partOrder: number
   description: string
+  scriptExcerpt?: string
+  visualInstruction?: string
+  contentTypeSlug?: ContentTypeSlug
   visualModeSlug: VisualModeSlug
   footageSourceSlug: FootageSourceSlug
   durationSeconds?: number
@@ -107,6 +124,9 @@ export type StoryboardShotDraft = Omit<
 
 export interface StoryboardShotUpdate {
   description?: string
+  scriptExcerpt?: string
+  visualInstruction?: string
+  contentTypeSlug?: ContentTypeSlug | null
   visualModeSlug?: VisualModeSlug
   footageSourceSlug?: FootageSourceSlug
   durationSeconds?: number | null

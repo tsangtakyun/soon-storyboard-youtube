@@ -41,7 +41,7 @@ const rowStyle: React.CSSProperties = {
 
 const textareaStyle: React.CSSProperties = {
   width: '100%',
-  minHeight: 78,
+  minHeight: 76,
   resize: 'vertical',
   border: '1px solid var(--line)',
   borderRadius: 6,
@@ -93,14 +93,20 @@ export function ShotCard({
   onMove,
   saving,
 }: ShotCardProps) {
-  const [description, setDescription] = useState(shot.description)
+  const [scriptExcerpt, setScriptExcerpt] = useState(
+    shot.scriptExcerpt ?? shot.description
+  )
+  const [visualInstruction, setVisualInstruction] = useState(
+    shot.visualInstruction ?? ''
+  )
   const [notes, setNotes] = useState(shot.notes ?? '')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    setDescription(shot.description)
+    setScriptExcerpt(shot.scriptExcerpt ?? shot.description)
+    setVisualInstruction(shot.visualInstruction ?? '')
     setNotes(shot.notes ?? '')
-  }, [shot.description, shot.notes])
+  }, [shot.description, shot.notes, shot.scriptExcerpt, shot.visualInstruction])
 
   const debouncedSave = useDebouncedCallback(
     async (shotId: string, updates: StoryboardShotUpdate) => {
@@ -161,15 +167,35 @@ export function ShotCard({
       </div>
 
       <label>
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>畫面描述</span>
+        <span style={{ color: 'var(--muted)', fontSize: 13 }}>讀稿原文</span>
         <textarea
           style={textareaStyle}
-          value={description}
+          value={scriptExcerpt}
           onChange={(event) => {
             const value = event.target.value
-            setDescription(value)
-            onOptimisticUpdate(shot.id, { description: value })
-            debouncedSave(shot.id, { description: value })
+            setScriptExcerpt(value)
+            onOptimisticUpdate(shot.id, {
+              scriptExcerpt: value,
+              description: value,
+            })
+            debouncedSave(shot.id, { scriptExcerpt: value, description: value })
+          }}
+        />
+      </label>
+
+      <label>
+        <span style={{ color: 'var(--muted)', fontSize: 13 }}>
+          鏡頭 instruction
+        </span>
+        <textarea
+          style={textareaStyle}
+          value={visualInstruction}
+          placeholder="例如：Medium shot 主持坐 studio sofa，eye-level，warm lighting。"
+          onChange={(event) => {
+            const value = event.target.value
+            setVisualInstruction(value)
+            onOptimisticUpdate(shot.id, { visualInstruction: value })
+            debouncedSave(shot.id, { visualInstruction: value })
           }}
         />
       </label>
@@ -203,8 +229,7 @@ export function ShotCard({
             value={shot.footageSourceSlug}
             onChange={(event) =>
               handleImmediateSave({
-                footageSourceSlug: event.target
-                  .value as StoryboardShot['footageSourceSlug'],
+                footageSourceSlug: event.target.value as StoryboardShot['footageSourceSlug'],
               })
             }
           >
@@ -238,6 +263,12 @@ export function ShotCard({
           />
         </label>
       </div>
+
+      {shot.contentTypeSlug && (
+        <p style={{ color: 'var(--muted)', margin: 0 }}>
+          Content type: <code>{shot.contentTypeSlug}</code>
+        </p>
+      )}
 
       <label>
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>備註</span>
