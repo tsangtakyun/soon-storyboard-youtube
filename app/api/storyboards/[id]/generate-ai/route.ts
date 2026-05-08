@@ -85,9 +85,12 @@ export async function POST(
           success: false,
           error: error.message,
           coverage: {
-            ratio: error.details.coverageRatio,
+            forwardRatio: error.details.forwardRatio,
+            reverseRatio: error.details.reverseRatio,
             totalSentences: error.details.totalSentences,
+            totalShots: error.details.totalShots,
             missingSentences: error.details.missingSentences,
+            hallucinatedShots: error.details.hallucinatedShots,
           },
         },
         { status: 422 }

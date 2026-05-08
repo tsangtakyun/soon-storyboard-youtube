@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 
 import { createShot, listShots } from '@/lib/storyboard-actions'
-import type { FootageSourceSlug, ScriptPartRole, VisualModeSlug } from '@/lib/types'
+import type {
+  FootageSourceSlug,
+  ScriptPartRole,
+  VisualModeSlug,
+} from '@/lib/types'
 
 export async function GET(
   _request: Request,

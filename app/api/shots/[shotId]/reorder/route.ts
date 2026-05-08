@@ -38,8 +38,12 @@ export async function POST(
 
   const { data: sibling, error: siblingError } =
     direction === 'up'
-      ? await siblingQuery.lt('display_order', currentShot.display_order).maybeSingle()
-      : await siblingQuery.gt('display_order', currentShot.display_order).maybeSingle()
+      ? await siblingQuery
+          .lt('display_order', currentShot.display_order)
+          .maybeSingle()
+      : await siblingQuery
+          .gt('display_order', currentShot.display_order)
+          .maybeSingle()
 
   if (siblingError) {
     return NextResponse.json(
@@ -50,7 +54,10 @@ export async function POST(
 
   if (!sibling) {
     return NextResponse.json(
-      { success: false, error: direction === 'up' ? '已經喺最頂' : '已經喺最底' },
+      {
+        success: false,
+        error: direction === 'up' ? '已經喺最頂' : '已經喺最底',
+      },
       { status: 400 }
     )
   }

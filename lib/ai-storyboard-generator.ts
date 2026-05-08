@@ -4,9 +4,15 @@ import {
   buildRetryPrompt,
   validateScriptCoverage,
   type CoverageResult,
+  type HallucinatedShot,
 } from './script-coverage-validator'
 import { getSupabaseServer } from './supabase-server'
-import type { FootageSourceSlug, Script, ScriptPartRole, VisualModeSlug } from './types'
+import type {
+  FootageSourceSlug,
+  Script,
+  ScriptPartRole,
+  VisualModeSlug,
+} from './types'
 
 export interface GeneratedShot {
   scriptPartRole: ScriptPartRole
@@ -23,8 +29,11 @@ export interface GeneratedShot {
 export class ScriptCoverageError extends Error {
   details: {
     missingSentences: string[]
-    coverageRatio: number
+    hallucinatedShots: HallucinatedShot[]
+    forwardRatio: number
+    reverseRatio: number
     totalSentences: number
+    totalShots: number
     generatedShots: GeneratedShot[]
   }
 
@@ -41,7 +50,9 @@ function extractJsonObject(rawText: string): string | null {
 
   const firstBrace = rawText.indexOf('{')
   const lastBrace = rawText.lastIndexOf('}')
-  if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) return null
+  if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
+    return null
+  }
   return rawText.slice(firstBrace, lastBrace + 1)
 }
 
@@ -69,7 +80,7 @@ function buildPrompt(
   footageSources: any[]
 ) {
   return [
-    'You are SOON\'s senior documentary director. Convert the script into a production storyboard shot list.',
+    "You are SOON's senior documentary director. Convert the script into a production storyboard shot list.",
     '',
     'CRITICAL JSON RULES:',
     '- Return one valid JSON object only.',
@@ -86,6 +97,12 @@ function buildPrompt(
     '- You may combine 2-3 short sentences in one shot, but you must include the full original sentences.',
     '- For long sentences, split across multiple shots if needed, but the substrings together must cover the whole sentence.',
     '- Before output, concatenate all script_excerpt values in order and verify no original sentence is missing.',
+    '',
+    'CRITICAL NO HALLUCINATION:',
+    '- Every shot.script_excerpt must be a verbatim substring from the original script.',
+    '- Do not add narrative completion. If the script says "首先" and "其次" but has no "第三", you must not invent "第三".',
+    '- Do not add transition sentences, bridge sentences, explanations, synonyms, or rewritten wording.',
+    '- Every character in script_excerpt should be traceable to the original script text.',
     '',
     'Production directive:',
     '- Minimize live_shoot. Prefer stock, internet footage, AI generation, and custom motion design.',
@@ -139,11 +156,16 @@ function normalizeShot(shot: any, index: number): GeneratedShot {
     scriptPartRole: shot.script_part_role ?? shot.scriptPartRole,
     partOrder: Number(shot.part_order ?? shot.partOrder ?? index),
     scriptExcerpt: String(shot.script_excerpt ?? shot.scriptExcerpt ?? ''),
-    visualInstruction: String(shot.visual_instruction ?? shot.visualInstruction ?? ''),
+    visualInstruction: String(
+      shot.visual_instruction ?? shot.visualInstruction ?? ''
+    ),
     contentTypeSlug: String(shot.content_type_slug ?? shot.contentTypeSlug ?? ''),
     visualModeSlug: shot.visual_mode_slug ?? shot.visualModeSlug,
     footageSourceSlug: shot.footage_source_slug ?? shot.footageSourceSlug,
-    durationSeconds: Math.max(1, Number(shot.duration_seconds ?? shot.durationSeconds ?? 5)),
+    durationSeconds: Math.max(
+      1,
+      Number(shot.duration_seconds ?? shot.durationSeconds ?? 5)
+    ),
     notes: shot.notes ? String(shot.notes) : undefined,
   }
 }
@@ -156,11 +178,14 @@ export function parseShotListResponse(rawText: string): GeneratedShot[] {
   try {
     parsed = JSON.parse(jsonText) as { shots?: any[] }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown JSON parse error'
+    const message =
+      error instanceof Error ? error.message : 'Unknown JSON parse error'
     throw new Error(`AI storyboard JSON 格式錯誤：${message}`)
   }
 
-  if (!Array.isArray(parsed.shots)) throw new Error('AI response 缺少 shots array')
+  if (!Array.isArray(parsed.shots)) {
+    throw new Error('AI response 缺少 shots array')
+  }
   return parsed.shots.map(normalizeShot)
 }
 
@@ -193,7 +218,10 @@ async function repairJsonWithClaude(
     .trim()
 }
 
-async function generateShots(anthropic: Anthropic, prompt: string) {
+async function generateShots(
+  anthropic: Anthropic,
+  prompt: string
+): Promise<GeneratedShot[]> {
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 8000,
@@ -224,7 +252,9 @@ function validateShots(
   footageSources: any[]
 ) {
   const validFootageSources = new Set(
-    footageSources.filter((fs) => fs.slug !== 'synthetic_host').map((fs) => fs.slug)
+    footageSources
+      .filter((fs) => fs.slug !== 'synthetic_host')
+      .map((fs) => fs.slug)
   )
   const validVisualModes = new Set(visualModes.map((vm) => vm.slug))
   const validContentTypes = new Set(contentTypes.map((ct) => ct.slug))
@@ -244,17 +274,22 @@ function validateShots(
 
 function throwCoverageError(coverage: CoverageResult, shots: GeneratedShot[]) {
   throw new ScriptCoverageError(
-    `Storyboard generation 漏咗 ${coverage.missingSentences.length} 句 script，retry 之後仍 incomplete。Coverage: ${(coverage.coverageRatio * 100).toFixed(1)}%`,
+    `Storyboard generation 失敗：Forward missing ${coverage.missingSentences.length} 句，Hallucinated ${coverage.hallucinatedShots.length} shots。Retry 之後仍 incomplete。`,
     {
       missingSentences: coverage.missingSentences,
-      coverageRatio: coverage.coverageRatio,
+      hallucinatedShots: coverage.hallucinatedShots,
+      forwardRatio: coverage.forwardRatio,
+      reverseRatio: coverage.reverseRatio,
       totalSentences: coverage.totalSentences,
+      totalShots: coverage.totalShots,
       generatedShots: shots,
     }
   )
 }
 
-export async function generateAIStoryboard(script: Script): Promise<GeneratedShot[]> {
+export async function generateAIStoryboard(
+  script: Script
+): Promise<GeneratedShot[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new Error('Missing ANTHROPIC_API_KEY')
 
@@ -273,7 +308,12 @@ export async function generateAIStoryboard(script: Script): Promise<GeneratedSho
   let coverage = validateScriptCoverage(script, shots)
   if (coverage.covered) return shots
 
-  const retryPrompt = buildRetryPrompt(initialPrompt, shots, coverage.missingSentences)
+  const retryPrompt = buildRetryPrompt(
+    initialPrompt,
+    shots,
+    coverage.missingSentences,
+    coverage.hallucinatedShots
+  )
   shots = await generateShots(anthropic, retryPrompt)
   validateShots(shots, contentTypes, visualModes, footageSources)
   coverage = validateScriptCoverage(script, shots)

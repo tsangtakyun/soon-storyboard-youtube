@@ -1,20 +1,39 @@
 import type { Script } from './types'
-import type { GeneratedShot } from './ai-storyboard-generator'
+
+export interface GeneratedShotLike {
+  scriptExcerpt?: string
+}
+
+export interface HallucinatedShot {
+  shotIndex: number
+  scriptExcerpt: string
+  matchedPortion?: string
+  unmatchedPortion: string
+}
 
 export interface CoverageResult {
   covered: boolean
+  forwardCovered: boolean
+  reverseCovered: boolean
   missingSentences: string[]
-  coverageRatio: number
+  hallucinatedShots: HallucinatedShot[]
+  forwardRatio: number
+  reverseRatio: number
   totalSentences: number
+  totalShots: number
 }
 
-export function splitScriptIntoSentences(script: Script): string[] {
-  const allParts = [...script.parts]
+export function getOriginalScriptText(script: Script): string {
+  return [...script.parts]
     .sort((a, b) => a.order - b.order)
     .map((part) => part.content)
     .join(' ')
+}
 
-  const sentences = allParts
+export function splitScriptIntoSentences(script: Script): string[] {
+  const allParts = getOriginalScriptText(script)
+
+  return allParts
     .split(/([。！？；])/g)
     .reduce<string[]>((acc, current, index, parts) => {
       if (index % 2 === 0 && current.trim()) {
@@ -24,65 +43,176 @@ export function splitScriptIntoSentences(script: Script): string[] {
       return acc
     }, [])
     .filter(Boolean)
+}
 
-  return sentences
+function normalizeWithMap(text: string): {
+  normalized: string
+  originalEndByNormalizedIndex: number[]
+} {
+  let normalized = ''
+  const originalEndByNormalizedIndex: number[] = []
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    if (/\s/.test(char)) continue
+    if (/["“”'‘’]/.test(char)) continue
+    if (/[—\-–]/.test(char)) continue
+    normalized += char
+    originalEndByNormalizedIndex.push(index + 1)
+  }
+
+  return { normalized, originalEndByNormalizedIndex }
 }
 
 function normalizeForCoverage(text: string): string {
-  return text
-    .replace(/\s+/g, '')
-    .replace(/["""'']/g, '')
-    .replace(/[—\-–]/g, '')
+  return normalizeWithMap(text).normalized
+}
+
+export function findLongestPrefixMatch(
+  excerpt: string,
+  originalScript: string
+): { matchedPortion: string; unmatchedPortion: string } {
+  const { normalized: normalizedExcerpt, originalEndByNormalizedIndex } =
+    normalizeWithMap(excerpt)
+  const normalizedScript = normalizeForCoverage(originalScript)
+
+  for (let length = normalizedExcerpt.length; length >= 5; length -= 1) {
+    const prefix = normalizedExcerpt.slice(0, length)
+    if (normalizedScript.includes(prefix)) {
+      const splitPoint = originalEndByNormalizedIndex[length - 1] ?? 0
+      return {
+        matchedPortion: excerpt.slice(0, splitPoint),
+        unmatchedPortion: excerpt.slice(splitPoint),
+      }
+    }
+  }
+
+  return {
+    matchedPortion: '',
+    unmatchedPortion: excerpt,
+  }
 }
 
 export function validateScriptCoverage(
   script: Script,
-  shots: Array<Pick<GeneratedShot, 'scriptExcerpt'>>
+  shots: GeneratedShotLike[]
 ): CoverageResult {
   const sentences = splitScriptIntoSentences(script)
-  const concatenated = shots.map((shot) => shot.scriptExcerpt ?? '').join(' ')
-  const normalizedConcat = normalizeForCoverage(concatenated)
+  const originalScriptText = getOriginalScriptText(script)
+  const normalizedScript = normalizeForCoverage(originalScriptText)
+  const concatenatedShots = shots
+    .map((shot) => shot.scriptExcerpt ?? '')
+    .join(' ')
+  const normalizedConcat = normalizeForCoverage(concatenatedShots)
 
   const countedSentences = sentences.filter(
     (sentence) => normalizeForCoverage(sentence).length >= 5
   )
   const missingSentences: string[] = []
-  let coveredCount = 0
+  let forwardCoveredCount = 0
 
   for (const sentence of countedSentences) {
     const normalizedSentence = normalizeForCoverage(sentence)
     if (normalizedConcat.includes(normalizedSentence)) {
-      coveredCount += 1
+      forwardCoveredCount += 1
     } else {
       missingSentences.push(sentence)
     }
   }
 
+  const hallucinatedShots: HallucinatedShot[] = []
+  let reverseCoveredCount = 0
+
+  shots.forEach((shot, index) => {
+    const excerpt = shot.scriptExcerpt ?? ''
+    if (!excerpt.trim()) {
+      reverseCoveredCount += 1
+      return
+    }
+
+    const normalizedExcerpt = normalizeForCoverage(excerpt)
+    if (normalizedScript.includes(normalizedExcerpt)) {
+      reverseCoveredCount += 1
+      return
+    }
+
+    const { matchedPortion, unmatchedPortion } = findLongestPrefixMatch(
+      excerpt,
+      originalScriptText
+    )
+
+    hallucinatedShots.push({
+      shotIndex: index,
+      scriptExcerpt: excerpt,
+      matchedPortion,
+      unmatchedPortion,
+    })
+  })
+
+  const totalSentences = countedSentences.length
+  const totalShots = shots.length
+  const forwardRatio =
+    totalSentences > 0 ? forwardCoveredCount / totalSentences : 1
+  const reverseRatio = totalShots > 0 ? reverseCoveredCount / totalShots : 1
+
   return {
-    covered: missingSentences.length === 0,
+    covered: missingSentences.length === 0 && hallucinatedShots.length === 0,
+    forwardCovered: missingSentences.length === 0,
+    reverseCovered: hallucinatedShots.length === 0,
     missingSentences,
-    coverageRatio:
-      countedSentences.length > 0 ? coveredCount / countedSentences.length : 1,
-    totalSentences: countedSentences.length,
+    hallucinatedShots,
+    forwardRatio,
+    reverseRatio,
+    totalSentences,
+    totalShots,
   }
 }
 
 export function buildRetryPrompt(
   originalPrompt: string,
-  generatedShots: GeneratedShot[],
-  missingSentences: string[]
+  generatedShots: GeneratedShotLike[],
+  missingSentences: string[],
+  hallucinatedShots: HallucinatedShot[]
 ): string {
+  const issueLines: string[] = []
+
+  if (missingSentences.length > 0) {
+    issueLines.push(
+      '## Missing sentences (must be covered verbatim)',
+      ...missingSentences.map(
+        (sentence, index) => `${index + 1}. "${sentence}"`
+      ),
+      ''
+    )
+  }
+
+  if (hallucinatedShots.length > 0) {
+    issueLines.push(
+      '## Hallucinated content (not present in original script, must be removed)',
+      ...hallucinatedShots.map(
+        (shot, index) =>
+          `${index + 1}. Shot ${shot.shotIndex + 1}: "${shot.unmatchedPortion}"`
+      ),
+      '',
+      'Your previous script_excerpt contained content that does not exist in the original script.',
+      'Do not complete patterns such as "first, second" by adding a "third" unless the original script literally contains it.',
+      ''
+    )
+  }
+
   return [
-    'Your previous storyboard missed required script sentences.',
+    'Your previous storyboard failed script fidelity validation.',
     '',
-    'CRITICAL: Regenerate the full storyboard. Every missing sentence below must appear verbatim inside some shot.script_excerpt.',
-    '',
-    'Missing sentences:',
-    ...missingSentences.map((sentence, index) => `${index + 1}. ${sentence}`),
-    '',
+    ...issueLines,
     `Previous shot count: ${generatedShots.length}`,
     '',
-    'Keep the same output JSON schema. Return JSON only.',
+    'Regenerate the full storyboard and satisfy both requirements:',
+    '1. Forward coverage: every original script sentence appears in some shot.script_excerpt.',
+    '2. Reverse coverage: every shot.script_excerpt is a verbatim substring from the original script.',
+    '',
+    'STRICT: script_excerpt is source text, not a summary field.',
+    'Do not rewrite, paraphrase, add transition sentences, or narratively complete missing structure.',
+    'Return JSON only using the same schema.',
     '',
     'Original instruction:',
     originalPrompt,

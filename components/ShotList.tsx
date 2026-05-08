@@ -1,6 +1,7 @@
 'use client'
 
 import { ShotCard } from './ShotCard'
+import type { HallucinatedShot } from '@/lib/script-coverage-validator'
 import type {
   FootageSource,
   ScriptPart,
@@ -16,6 +17,7 @@ interface ShotListProps {
   visualModes: VisualMode[]
   footageSources: FootageSource[]
   savingShotId: string | null
+  validationByShotId?: Map<string, HallucinatedShot>
   onAddShot: (role: ScriptPartRole) => void
   onDeleteShot: (shotId: string) => void
   onMoveShot: (shotId: string, direction: 'up' | 'down') => void
@@ -47,6 +49,7 @@ export function ShotList({
   visualModes,
   footageSources,
   savingShotId,
+  validationByShotId,
   onAddShot,
   onDeleteShot,
   onMoveShot,
@@ -69,21 +72,33 @@ export function ShotList({
           呢個 part 暫時未有 shot。
         </p>
       ) : (
-        shots.map((shot, index) => (
-          <ShotCard
-            key={shot.id}
-            shot={shot}
-            visualModes={visualModes}
-            footageSources={footageSources}
-            canMoveUp={index > 0}
-            canMoveDown={index < shots.length - 1}
-            saving={savingShotId === shot.id}
-            onOptimisticUpdate={onOptimisticUpdate}
-            onServerUpdate={onServerUpdate}
-            onDelete={onDeleteShot}
-            onMove={onMoveShot}
-          />
-        ))
+        shots.map((shot, index) => {
+          const hallucination = validationByShotId?.get(shot.id)
+          return (
+            <ShotCard
+              key={shot.id}
+              shot={shot}
+              validation={
+                hallucination
+                  ? {
+                      isHallucinated: true,
+                      matchedPortion: hallucination.matchedPortion,
+                      unmatchedPortion: hallucination.unmatchedPortion,
+                    }
+                  : undefined
+              }
+              visualModes={visualModes}
+              footageSources={footageSources}
+              canMoveUp={index > 0}
+              canMoveDown={index < shots.length - 1}
+              saving={savingShotId === shot.id}
+              onOptimisticUpdate={onOptimisticUpdate}
+              onServerUpdate={onServerUpdate}
+              onDelete={onDeleteShot}
+              onMove={onMoveShot}
+            />
+          )
+        })
       )}
 
       <button type="button" style={buttonStyle} onClick={() => onAddShot(part.role)}>

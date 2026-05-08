@@ -10,8 +10,15 @@ import type {
   VisualMode,
 } from '@/lib/types'
 
+interface ShotValidation {
+  isHallucinated: boolean
+  matchedPortion?: string
+  unmatchedPortion?: string
+}
+
 interface ShotCardProps {
   shot: StoryboardShot
+  validation?: ShotValidation
   visualModes: VisualMode[]
   footageSources: FootageSource[]
   canMoveUp: boolean
@@ -83,6 +90,7 @@ async function patchShot(shotId: string, updates: StoryboardShotUpdate) {
 
 export function ShotCard({
   shot,
+  validation,
   visualModes,
   footageSources,
   canMoveUp,
@@ -134,10 +142,34 @@ export function ShotCard({
 
   return (
     <article style={cardStyle}>
+      {validation?.isHallucinated && (
+        <div
+          style={{
+            border: '1px solid #ff8585',
+            background: 'rgba(255,80,80,0.12)',
+            color: '#ffd0d0',
+            borderRadius: 8,
+            padding: 10,
+            lineHeight: 1.55,
+          }}
+        >
+          <strong>此 shot 嘅讀稿原文包含 script 入面不存在嘅內容。</strong>
+          <details style={{ marginTop: 6 }}>
+            <summary>查看 detail</summary>
+            <p style={{ marginBottom: 6 }}>
+              Matched: {validation.matchedPortion || '無可確認原文'}
+            </p>
+            <p style={{ margin: 0 }}>
+              Hallucinated: {validation.unmatchedPortion || '未能定位'}
+            </p>
+          </details>
+        </div>
+      )}
+
       <div style={{ ...rowStyle, justifyContent: 'space-between' }}>
         <strong>Shot {shot.displayOrder + 1}</strong>
         <div style={rowStyle}>
-          {saving && <span style={{ color: 'var(--muted)' }}>儲存中</span>}
+          {saving && <span style={{ color: 'var(--muted)' }}>儲存中...</span>}
           <button
             type="button"
             style={buttonStyle}
@@ -190,7 +222,7 @@ export function ShotCard({
         <textarea
           style={textareaStyle}
           value={visualInstruction}
-          placeholder="例如：Medium shot 主持坐 studio sofa，eye-level，warm lighting。"
+          placeholder="例：Medium shot 主持坐 studio sofa，eye-level，warm lighting。"
           onChange={(event) => {
             const value = event.target.value
             setVisualInstruction(value)
@@ -209,7 +241,8 @@ export function ShotCard({
             value={shot.visualModeSlug}
             onChange={(event) =>
               handleImmediateSave({
-                visualModeSlug: event.target.value as StoryboardShot['visualModeSlug'],
+                visualModeSlug: event.target
+                  .value as StoryboardShot['visualModeSlug'],
               })
             }
           >
@@ -222,14 +255,17 @@ export function ShotCard({
         </label>
 
         <label>
-          <span style={{ color: 'var(--muted)', fontSize: 13 }}>Footage source</span>
+          <span style={{ color: 'var(--muted)', fontSize: 13 }}>
+            Footage source
+          </span>
           <br />
           <select
             style={inputStyle}
             value={shot.footageSourceSlug}
             onChange={(event) =>
               handleImmediateSave({
-                footageSourceSlug: event.target.value as StoryboardShot['footageSourceSlug'],
+                footageSourceSlug: event.target
+                  .value as StoryboardShot['footageSourceSlug'],
               })
             }
           >

@@ -1,8 +1,9 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { ShotList } from '@/components/ShotList'
+import type { HallucinatedShot } from '@/lib/script-coverage-validator'
 import type {
   FootageSource,
   Script,
@@ -18,6 +19,18 @@ interface StoryboardClientProps {
   storyboard: Storyboard
   visualModes: VisualMode[]
   footageSources: FootageSource[]
+}
+
+interface CoverageReport {
+  covered: boolean
+  forwardCovered: boolean
+  reverseCovered: boolean
+  forwardRatio: number
+  reverseRatio: number
+  totalSentences: number
+  totalShots: number
+  missingSentences: string[]
+  hallucinatedShots: HallucinatedShot[]
 }
 
 const pageStyle: React.CSSProperties = {
@@ -56,22 +69,35 @@ function sortShots(shots: StoryboardShot[]) {
 
 function formatCoverageError(data: any) {
   if (!data.coverage) return data.error ?? 'AI 生成 storyboard 失敗'
+
   const missing = data.coverage.missingSentences ?? []
-  const preview = missing
+  const hallucinated = data.coverage.hallucinatedShots ?? []
+  const missingPreview = missing
     .slice(0, 5)
     .map((sentence: string, index: number) => `${index + 1}. ${sentence}`)
     .join('\n')
-  const more =
-    missing.length > 5 ? `\n...仲有 ${missing.length - 5} 句未覆蓋` : ''
+  const hallucinationPreview = hallucinated
+    .slice(0, 5)
+    .map(
+      (shot: HallucinatedShot, index: number) =>
+        `${index + 1}. Shot ${shot.shotIndex + 1}: ${shot.unmatchedPortion}`
+    )
+    .join('\n')
+
   return [
-    `AI 生成失敗：script 漏咗 ${missing.length} 句。`,
-    `Coverage：${(data.coverage.ratio * 100).toFixed(1)}%`,
+    'AI 生成失敗：script fidelity validation 未通過。',
+    `Forward coverage：${((data.coverage.forwardRatio ?? 0) * 100).toFixed(1)}%`,
+    `Reverse coverage：${((data.coverage.reverseRatio ?? 0) * 100).toFixed(1)}%`,
     '',
-    preview,
-    more,
+    missing.length > 0 ? `Missing sentences (${missing.length}):\n${missingPreview}` : '',
+    hallucinated.length > 0
+      ? `Hallucinated shots (${hallucinated.length}):\n${hallucinationPreview}`
+      : '',
     '',
-    '可以先用 Layer 2 default fallback，或者將呢個 case 交返開發者調 prompt。',
-  ].join('\n')
+    '可以先用 Layer 2 default fallback，或者保留呢個 case 畀開發者調 prompt。',
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 export function StoryboardClient({
@@ -84,6 +110,8 @@ export function StoryboardClient({
   const [loading, setLoading] = useState(false)
   const [savingShotId, setSavingShotId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [coverage, setCoverage] = useState<CoverageReport | null>(null)
+  const [expandedParts, setExpandedParts] = useState<Set<number>>(new Set())
 
   const enabledFootageSources = useMemo(
     () => footageSources.filter((source) => source.slug !== 'synthetic_host'),
@@ -102,6 +130,65 @@ export function StoryboardClient({
     }
     return grouped
   }, [shots])
+
+  const coverageKey = useMemo(
+    () =>
+      shots
+        .map(
+          (shot) =>
+            `${shot.id}:${shot.scriptExcerpt ?? shot.description}:${shot.displayOrder}`
+        )
+        .join('|'),
+    [shots]
+  )
+
+  const validationByShotId = useMemo(() => {
+    const map = new Map<string, HallucinatedShot>()
+    if (!coverage?.hallucinatedShots) return map
+
+    for (const hallucination of coverage.hallucinatedShots) {
+      const shotId = sortShots(shots)[hallucination.shotIndex]?.id
+      if (shotId) map.set(shotId, hallucination)
+    }
+    return map
+  }, [coverage, shots])
+
+  useEffect(() => {
+    if (shots.length === 0) {
+      setCoverage(null)
+      return
+    }
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/storyboards/${storyboard.id}/validate-coverage`,
+          { method: 'POST', signal: controller.signal }
+        )
+        const data = await res.json()
+        if (data.success) {
+          setCoverage(data)
+        }
+      } catch {
+        if (!controller.signal.aborted) setCoverage(null)
+      }
+    }, 350)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+    }
+  }, [coverageKey, shots.length, storyboard.id])
+
+  function togglePart(order: number) {
+    setExpandedParts((current) => {
+      const next = new Set(current)
+      if (next.has(order)) next.delete(order)
+      else next.add(order)
+      return next
+    })
+  }
 
   async function refreshShots() {
     const res = await fetch(`/api/storyboards/${storyboard.id}/shots`)
@@ -164,7 +251,7 @@ export function StoryboardClient({
           scriptPartRole: role,
           visualModeSlug: visualModes[0]?.slug ?? 'talking_head',
           footageSourceSlug: enabledFootageSources[0]?.slug ?? 'live_shoot',
-          description: '補充呢個 shot 要呈現嘅畫面。',
+          description: '新增一個 storyboard shot。',
         }),
       })
       const data = await res.json()
@@ -261,25 +348,49 @@ export function StoryboardClient({
         <aside style={{ ...panelStyle, position: 'sticky', top: 16 }}>
           <h2 style={{ marginTop: 0 }}>Script parts</h2>
           <div style={{ display: 'grid', gap: 12 }}>
-            {script.parts.map((part) => (
-              <article
-                key={`${part.order}-${part.role}`}
-                style={{
-                  border: '1px solid var(--line)',
-                  borderRadius: 8,
-                  padding: 12,
-                  background: 'rgba(255,255,255,0.03)',
-                }}
-              >
-                <h3 style={{ margin: '0 0 8px', fontSize: 16 }}>
-                  {part.order + 1}. {part.roleLabel ?? part.role}
-                </h3>
-                <p style={{ color: 'var(--muted)', lineHeight: 1.55, margin: 0 }}>
-                  {part.content.slice(0, 220)}
-                  {part.content.length > 220 ? '...' : ''}
-                </p>
-              </article>
-            ))}
+            {script.parts.map((part) => {
+              const isExpanded = expandedParts.has(part.order)
+              const shouldTruncate = part.content.length > 220
+              const displayContent =
+                isExpanded || !shouldTruncate
+                  ? part.content
+                  : `${part.content.slice(0, 220)}⋯`
+
+              return (
+                <article
+                  key={`${part.order}-${part.role}`}
+                  style={{
+                    border: '1px solid var(--line)',
+                    borderRadius: 8,
+                    padding: 12,
+                    background: 'rgba(255,255,255,0.03)',
+                  }}
+                >
+                  <h3 style={{ margin: '0 0 8px', fontSize: 16 }}>
+                    {part.order + 1}. {part.roleLabel ?? part.role}
+                  </h3>
+                  <p
+                    style={{
+                      color: 'var(--muted)',
+                      lineHeight: 1.55,
+                      margin: 0,
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {displayContent}
+                  </p>
+                  {shouldTruncate && (
+                    <button
+                      type="button"
+                      style={{ ...buttonStyle, marginTop: 10, padding: '8px 10px' }}
+                      onClick={() => togglePart(part.order)}
+                    >
+                      {isExpanded ? '▲ 收起' : '▼ 展開全文'}
+                    </button>
+                  )}
+                </article>
+              )
+            })}
           </div>
         </aside>
 
@@ -294,7 +405,24 @@ export function StoryboardClient({
             }}
           >
             <div>
-              <h2 style={{ margin: 0 }}>Storyboard</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <h2 style={{ margin: 0 }}>Storyboard</h2>
+                {coverage && (
+                  <span
+                    style={{
+                      border: `1px solid ${coverage.covered ? '#58d68d' : '#ffb86b'}`,
+                      color: coverage.covered ? '#8ff0b5' : '#ffd6a3',
+                      borderRadius: 999,
+                      padding: '4px 9px',
+                      fontSize: 12,
+                    }}
+                  >
+                    {coverage.covered
+                      ? 'Coverage 100%'
+                      : `Coverage issue: missing ${coverage.missingSentences.length}, hallucinated ${coverage.hallucinatedShots.length}`}
+                  </span>
+                )}
+              </div>
               <p style={{ color: 'var(--muted)', margin: '6px 0 0' }}>
                 {shots.length} shots · Visual modes {visualModes.length} · Footage
                 sources {footageSources.length}
@@ -325,8 +453,8 @@ export function StoryboardClient({
 
           {shots.length === 0 ? (
             <p style={{ color: 'var(--muted)', lineHeight: 1.7 }}>
-              呢個 storyboard 暫時未有 shot。建議先用 AI 生成 content-aware
-              storyboard；如果 Anthropic key 未設定，可以用 Layer 2 default fallback。
+              呢個 storyboard 暫時未有 shot。你可以用 AI 生成 content-aware
+              storyboard；如果 Anthropic key 未設定，可以先用 Layer 2 default fallback。
             </p>
           ) : (
             <div style={{ display: 'grid', gap: 14, marginTop: 16 }}>
@@ -338,6 +466,7 @@ export function StoryboardClient({
                   visualModes={visualModes}
                   footageSources={footageSources}
                   savingShotId={savingShotId}
+                  validationByShotId={validationByShotId}
                   onAddShot={handleAddShot}
                   onDeleteShot={handleDeleteShot}
                   onMoveShot={handleMoveShot}

@@ -93,6 +93,20 @@ export async function fetchScriptByStoryboard(
   return fetchScript(data.script_id)
 }
 
+export async function fetchShots(
+  storyboardId: string
+): Promise<StoryboardShot[]> {
+  const supabase = getSupabaseServer()
+  const { data, error } = await supabase
+    .from('storyboard_shots')
+    .select('*')
+    .eq('storyboard_id', storyboardId)
+    .order('display_order', { ascending: true })
+
+  if (error) throw new Error(error.message)
+  return (data ?? []).map(mapShotRow)
+}
+
 export async function createStoryboard(scriptId: string): Promise<string> {
   const supabase = getSupabaseServer()
   const { data: script } = await supabase
