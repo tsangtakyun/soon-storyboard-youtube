@@ -20,7 +20,7 @@
 | `scripts/test-script-coverage.mjs` | Modified | 79 | Forward + reverse + hallucination tests |
 | API / helper mojibake cleanup | Modified | n/a | Cleaned touched user-facing strings |
 
-Commit hash: pending at report creation; final hash reported after commit.
+Implementation commit hash: `db04a12`
 
 Deployment URL: `https://soon-storyboard-youtube.vercel.app`
 
