@@ -1,5 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk'
 
+import {
+  buildRetryPrompt,
+  validateScriptCoverage,
+  type CoverageResult,
+} from './script-coverage-validator'
 import { getSupabaseServer } from './supabase-server'
 import type { FootageSourceSlug, Script, ScriptPartRole, VisualModeSlug } from './types'
 
@@ -13,6 +18,21 @@ export interface GeneratedShot {
   footageSourceSlug: FootageSourceSlug
   durationSeconds: number
   notes?: string
+}
+
+export class ScriptCoverageError extends Error {
+  details: {
+    missingSentences: string[]
+    coverageRatio: number
+    totalSentences: number
+    generatedShots: GeneratedShot[]
+  }
+
+  constructor(message: string, details: ScriptCoverageError['details']) {
+    super(message)
+    this.name = 'ScriptCoverageError'
+    this.details = details
+  }
 }
 
 function extractJsonObject(rawText: string): string | null {
@@ -57,6 +77,15 @@ function buildPrompt(
     '- Every array element must be separated by a comma.',
     '- Escape all quotation marks inside string values.',
     '- Keep strings concise so the JSON is not truncated.',
+    '',
+    'CRITICAL FULL SCRIPT COVERAGE:',
+    '- Storyboard is a 1:1 map between script and visuals.',
+    '- Every sentence in the script must appear in at least one shot.script_excerpt.',
+    '- Do not skip transitional, structural, or pivot sentences.',
+    '- Sentences beginning with "但係", "換言之", "另一方面", "首先", "其次", "最後", "我們就需要問" are mandatory coverage.',
+    '- You may combine 2-3 short sentences in one shot, but you must include the full original sentences.',
+    '- For long sentences, split across multiple shots if needed, but the substrings together must cover the whole sentence.',
+    '- Before output, concatenate all script_excerpt values in order and verify no original sentence is missing.',
     '',
     'Production directive:',
     '- Minimize live_shoot. Prefer stock, internet footage, AI generation, and custom motion design.',
@@ -164,6 +193,30 @@ async function repairJsonWithClaude(
     .trim()
 }
 
+async function generateShots(anthropic: Anthropic, prompt: string) {
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8000,
+    messages: [{ role: 'user', content: prompt }],
+  })
+
+  const rawText = response.content
+    .map((part) => ('text' in part ? part.text : ''))
+    .join('')
+    .trim()
+
+  try {
+    return parseShotListResponse(rawText)
+  } catch (error) {
+    const repaired = await repairJsonWithClaude(
+      anthropic,
+      rawText,
+      error instanceof Error ? error.message : 'JSON parse failed'
+    )
+    return parseShotListResponse(repaired)
+  }
+}
+
 function validateShots(
   shots: GeneratedShot[],
   contentTypes: any[],
@@ -189,6 +242,18 @@ function validateShots(
   }
 }
 
+function throwCoverageError(coverage: CoverageResult, shots: GeneratedShot[]) {
+  throw new ScriptCoverageError(
+    `Storyboard generation 漏咗 ${coverage.missingSentences.length} 句 script，retry 之後仍 incomplete。Coverage: ${(coverage.coverageRatio * 100).toFixed(1)}%`,
+    {
+      missingSentences: coverage.missingSentences,
+      coverageRatio: coverage.coverageRatio,
+      totalSentences: coverage.totalSentences,
+      generatedShots: shots,
+    }
+  )
+}
+
 export async function generateAIStoryboard(script: Script): Promise<GeneratedShot[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new Error('Missing ANTHROPIC_API_KEY')
@@ -200,34 +265,22 @@ export async function generateAIStoryboard(script: Script): Promise<GeneratedSho
   ])
 
   const anthropic = new Anthropic({ apiKey })
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 8000,
-    messages: [
-      {
-        role: 'user',
-        content: buildPrompt(script, contentTypes, visualModes, footageSources),
-      },
-    ],
-  })
+  const initialPrompt = buildPrompt(script, contentTypes, visualModes, footageSources)
 
-  const rawText = response.content
-    .map((part) => ('text' in part ? part.text : ''))
-    .join('')
-    .trim()
+  let shots = await generateShots(anthropic, initialPrompt)
+  validateShots(shots, contentTypes, visualModes, footageSources)
 
-  let shots: GeneratedShot[]
-  try {
-    shots = parseShotListResponse(rawText)
-  } catch (error) {
-    const repaired = await repairJsonWithClaude(
-      anthropic,
-      rawText,
-      error instanceof Error ? error.message : 'JSON parse failed'
-    )
-    shots = parseShotListResponse(repaired)
+  let coverage = validateScriptCoverage(script, shots)
+  if (coverage.covered) return shots
+
+  const retryPrompt = buildRetryPrompt(initialPrompt, shots, coverage.missingSentences)
+  shots = await generateShots(anthropic, retryPrompt)
+  validateShots(shots, contentTypes, visualModes, footageSources)
+  coverage = validateScriptCoverage(script, shots)
+
+  if (!coverage.covered) {
+    throwCoverageError(coverage, shots)
   }
 
-  validateShots(shots, contentTypes, visualModes, footageSources)
   return shots
 }

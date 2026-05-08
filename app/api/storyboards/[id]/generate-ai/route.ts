@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 
-import { generateAIStoryboard } from '@/lib/ai-storyboard-generator'
+import {
+  generateAIStoryboard,
+  ScriptCoverageError,
+} from '@/lib/ai-storyboard-generator'
 import { getSupabaseServer } from '@/lib/supabase-server'
 import { fetchScriptByStoryboard, mapShotRow } from '@/lib/storyboard-fetch'
 
@@ -30,7 +33,10 @@ export async function POST(
 
   if ((count ?? 0) > 0) {
     return NextResponse.json(
-      { success: false, error: 'Storyboard 已有 shots。要重新生成請先刪除現有 shots。' },
+      {
+        success: false,
+        error: 'Storyboard 已有 shots。要重新生成請先刪除現有 shots。',
+      },
       { status: 400 }
     )
   }
@@ -73,6 +79,21 @@ export async function POST(
       shots: (data ?? []).map(mapShotRow),
     })
   } catch (error) {
+    if (error instanceof ScriptCoverageError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+          coverage: {
+            ratio: error.details.coverageRatio,
+            totalSentences: error.details.totalSentences,
+            missingSentences: error.details.missingSentences,
+          },
+        },
+        { status: 422 }
+      )
+    }
+
     return NextResponse.json(
       {
         success: false,

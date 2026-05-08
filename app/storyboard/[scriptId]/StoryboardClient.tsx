@@ -54,6 +54,26 @@ function sortShots(shots: StoryboardShot[]) {
   return [...shots].sort((a, b) => a.displayOrder - b.displayOrder)
 }
 
+function formatCoverageError(data: any) {
+  if (!data.coverage) return data.error ?? 'AI 生成 storyboard 失敗'
+  const missing = data.coverage.missingSentences ?? []
+  const preview = missing
+    .slice(0, 5)
+    .map((sentence: string, index: number) => `${index + 1}. ${sentence}`)
+    .join('\n')
+  const more =
+    missing.length > 5 ? `\n...仲有 ${missing.length - 5} 句未覆蓋` : ''
+  return [
+    `AI 生成失敗：script 漏咗 ${missing.length} 句。`,
+    `Coverage：${(data.coverage.ratio * 100).toFixed(1)}%`,
+    '',
+    preview,
+    more,
+    '',
+    '可以先用 Layer 2 default fallback，或者將呢個 case 交返開發者調 prompt。',
+  ].join('\n')
+}
+
 export function StoryboardClient({
   script,
   storyboard,
@@ -100,6 +120,9 @@ export function StoryboardClient({
         method: 'POST',
       })
       const data = await res.json()
+      if (res.status === 422 && data.coverage) {
+        throw new Error(formatCoverageError(data))
+      }
       if (!res.ok || !data.success) {
         throw new Error(data.error ?? 'AI 生成 storyboard 失敗')
       }
@@ -222,7 +245,14 @@ export function StoryboardClient({
       </section>
 
       {error && (
-        <section style={{ ...panelStyle, borderColor: '#ff8585', color: '#ffb5b5' }}>
+        <section
+          style={{
+            ...panelStyle,
+            borderColor: '#ff8585',
+            color: '#ffb5b5',
+            whiteSpace: 'pre-wrap',
+          }}
+        >
           {error}
         </section>
       )}
