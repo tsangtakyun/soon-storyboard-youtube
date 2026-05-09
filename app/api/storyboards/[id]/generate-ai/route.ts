@@ -100,7 +100,8 @@ export async function POST(
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'AI generation failed',
+        error:
+          error instanceof Error ? error.message : 'AI generation failed',
       },
       { status: 500 }
     )

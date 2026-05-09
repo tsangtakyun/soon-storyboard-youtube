@@ -68,9 +68,9 @@ async function fetchLayer2(table: string) {
 }
 
 function targetShotRange(targetMinutes: number) {
-  if (targetMinutes <= 6) return '18-28'
-  if (targetMinutes <= 12) return '35-55'
-  return '70-120'
+  if (targetMinutes <= 6) return '16-24'
+  if (targetMinutes <= 12) return '32-50'
+  return '70-110'
 }
 
 function buildPrompt(
@@ -83,26 +83,25 @@ function buildPrompt(
     "You are SOON's senior documentary director. Convert the script into a production storyboard shot list.",
     '',
     'CRITICAL JSON RULES:',
-    '- Return one valid JSON object only.',
+    '- Return one valid JSON object only: {"shots":[...]}',
     '- No Markdown, no code fence, no comments.',
     '- Every array element must be separated by a comma.',
     '- Escape all quotation marks inside string values.',
-    '- Keep strings concise so the JSON is not truncated.',
+    '- Keep visual_instruction under 90 Chinese characters.',
+    '- Omit notes unless absolutely necessary.',
     '',
     'CRITICAL FULL SCRIPT COVERAGE:',
     '- Storyboard is a 1:1 map between script and visuals.',
     '- Every sentence in the script must appear in at least one shot.script_excerpt.',
     '- Do not skip transitional, structural, or pivot sentences.',
     '- Sentences beginning with "但係", "換言之", "另一方面", "首先", "其次", "最後", "我們就需要問" are mandatory coverage.',
-    '- You may combine 2-3 short sentences in one shot, but you must include the full original sentences.',
+    '- You may combine 2-3 short sentences in one shot, but include the full original sentences.',
     '- For long sentences, split across multiple shots if needed, but the substrings together must cover the whole sentence.',
-    '- Before output, concatenate all script_excerpt values in order and verify no original sentence is missing.',
     '',
     'CRITICAL NO HALLUCINATION:',
     '- Every shot.script_excerpt must be a verbatim substring from the original script.',
-    '- Do not add narrative completion. If the script says "首先" and "其次" but has no "第三", you must not invent "第三".',
+    '- Do not add narrative completion. If the script says "首先" and "其次" but has no "第三", do not invent "第三".',
     '- Do not add transition sentences, bridge sentences, explanations, synonyms, or rewritten wording.',
-    '- Every character in script_excerpt should be traceable to the original script text.',
     '',
     'Production directive:',
     '- Minimize live_shoot. Prefer stock, internet footage, AI generation, and custom motion design.',
@@ -113,7 +112,7 @@ function buildPrompt(
     contentTypes
       .map(
         (ct) =>
-          `- ${ct.slug}: ${ct.label_zh} / ${ct.label_en}. Default ${ct.default_visual_mode_slug} + ${ct.default_footage_source_slug}. Duration ${ct.typical_duration_min}-${ct.typical_duration_max}s. Hints: ${(ct.identification_hints ?? []).join(' / ')}`
+          `- ${ct.slug}: ${ct.label_zh} / ${ct.label_en}. Default ${ct.default_visual_mode_slug} + ${ct.default_footage_source_slug}. Duration ${ct.typical_duration_min}-${ct.typical_duration_max}s.`
       )
       .join('\n'),
     '',
@@ -138,16 +137,13 @@ function buildPrompt(
     '',
     'Task:',
     `Create ${targetShotRange(script.targetMinutes)} shots for this script.`,
-    'For each shot:',
+    'Each shot must contain:',
     '- script_excerpt: exact narration excerpt from the script. Do not rewrite.',
     '- visual_instruction: specific production visual direction. Do not just copy narration.',
-    '- content_type_slug: one of the content types above.',
-    '- visual_mode_slug: one of the visual modes above.',
-    '- footage_source_slug: one of the enabled footage sources above.',
-    '- duration_seconds: practical estimate.',
+    '- content_type_slug, visual_mode_slug, footage_source_slug, duration_seconds.',
     '',
     'Output schema:',
-    '{"shots":[{"script_part_role":"hook","part_order":0,"script_excerpt":"...","visual_instruction":"...","content_type_slug":"host_thesis","visual_mode_slug":"talking_head","footage_source_slug":"live_shoot","duration_seconds":8,"notes":"optional"}]}',
+    '{"shots":[{"script_part_role":"hook","part_order":0,"script_excerpt":"...","visual_instruction":"...","content_type_slug":"host_thesis","visual_mode_slug":"talking_head","footage_source_slug":"live_shoot","duration_seconds":8}]}',
   ].join('\n')
 }
 
@@ -189,27 +185,15 @@ export function parseShotListResponse(rawText: string): GeneratedShot[] {
   return parsed.shots.map(normalizeShot)
 }
 
-async function repairJsonWithClaude(
+async function callClaude(
   anthropic: Anthropic,
-  rawText: string,
-  parseError: string
+  prompt: string,
+  maxTokens = 12000
 ): Promise<string> {
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 8000,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          'Repair the following invalid JSON into one valid minified JSON object.',
-          'Do not change field names or semantic content.',
-          'Return JSON only. No Markdown. No explanation.',
-          `Parse error: ${parseError}`,
-          '',
-          rawText.slice(0, 24000),
-        ].join('\n'),
-      },
-    ],
+    max_tokens: maxTokens,
+    messages: [{ role: 'user', content: prompt }],
   })
 
   return response.content
@@ -218,31 +202,51 @@ async function repairJsonWithClaude(
     .trim()
 }
 
+async function repairJsonWithClaude(
+  anthropic: Anthropic,
+  rawText: string,
+  parseError: string
+): Promise<string> {
+  return callClaude(
+    anthropic,
+    [
+      'Repair this invalid JSON into one valid minified JSON object.',
+      'Return JSON only. No Markdown. No explanation.',
+      'The required top-level shape is {"shots":[...]}',
+      'Preserve all existing fields and text as much as possible.',
+      'Fix missing commas, unescaped quotes, dangling commas, and broken brackets.',
+      'If the final object is truncated, close the last complete shot object and close the array/object.',
+      `Parse error: ${parseError}`,
+      '',
+      rawText.slice(0, 50000),
+    ].join('\n'),
+    12000
+  )
+}
+
 async function generateShots(
   anthropic: Anthropic,
   prompt: string
 ): Promise<GeneratedShot[]> {
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 8000,
-    messages: [{ role: 'user', content: prompt }],
-  })
+  let rawText = await callClaude(anthropic, prompt)
+  let lastError: unknown = null
 
-  const rawText = response.content
-    .map((part) => ('text' in part ? part.text : ''))
-    .join('')
-    .trim()
-
-  try {
-    return parseShotListResponse(rawText)
-  } catch (error) {
-    const repaired = await repairJsonWithClaude(
-      anthropic,
-      rawText,
-      error instanceof Error ? error.message : 'JSON parse failed'
-    )
-    return parseShotListResponse(repaired)
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return parseShotListResponse(rawText)
+    } catch (error) {
+      lastError = error
+      rawText = await repairJsonWithClaude(
+        anthropic,
+        rawText,
+        error instanceof Error ? error.message : 'JSON parse failed'
+      )
+    }
   }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('AI storyboard JSON 格式錯誤')
 }
 
 function validateShots(
