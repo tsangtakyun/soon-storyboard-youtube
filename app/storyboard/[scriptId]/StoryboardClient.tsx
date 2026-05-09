@@ -63,6 +63,15 @@ const buttonStyle: React.CSSProperties = {
   cursor: 'pointer',
 }
 
+const PART_LABELS: Partial<Record<ScriptPartRole, string>> = {
+  hook: '鈎子',
+  setup: '鋪陳',
+  detail: '細節',
+  complication: '矛盾',
+  depth: '深層',
+  resolution: '收結',
+}
+
 function sortShots(shots: StoryboardShot[]) {
   return [...shots].sort((a, b) => a.displayOrder - b.displayOrder)
 }
@@ -108,6 +117,9 @@ export function StoryboardClient({
 }: StoryboardClientProps) {
   const [shots, setShots] = useState<StoryboardShot[]>(sortShots(storyboard.shots))
   const [loading, setLoading] = useState(false)
+  const [partRegenerating, setPartRegenerating] = useState<ScriptPartRole | null>(
+    null
+  )
   const [savingShotId, setSavingShotId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [coverage, setCoverage] = useState<CoverageReport | null>(null)
@@ -118,28 +130,27 @@ export function StoryboardClient({
     [footageSources]
   )
 
+  const sortedShots = useMemo(() => sortShots(shots), [shots])
+
   const shotsByRole = useMemo(() => {
     const grouped = new Map<ScriptPartRole, StoryboardShot[]>()
-    for (const shot of shots) {
+    for (const shot of sortedShots) {
       const current = grouped.get(shot.scriptPartRole) ?? []
       current.push(shot)
       grouped.set(shot.scriptPartRole, current)
     }
-    for (const [role, roleShots] of grouped) {
-      grouped.set(role, sortShots(roleShots))
-    }
     return grouped
-  }, [shots])
+  }, [sortedShots])
 
   const coverageKey = useMemo(
     () =>
-      shots
+      sortedShots
         .map(
           (shot) =>
             `${shot.id}:${shot.scriptExcerpt ?? shot.description}:${shot.displayOrder}`
         )
         .join('|'),
-    [shots]
+    [sortedShots]
   )
 
   const validationByShotId = useMemo(() => {
@@ -147,11 +158,11 @@ export function StoryboardClient({
     if (!coverage?.hallucinatedShots) return map
 
     for (const hallucination of coverage.hallucinatedShots) {
-      const shotId = sortShots(shots)[hallucination.shotIndex]?.id
+      const shotId = sortedShots[hallucination.shotIndex]?.id
       if (shotId) map.set(shotId, hallucination)
     }
     return map
-  }, [coverage, shots])
+  }, [coverage, sortedShots])
 
   useEffect(() => {
     if (shots.length === 0) {
@@ -167,9 +178,7 @@ export function StoryboardClient({
           { method: 'POST', signal: controller.signal }
         )
         const data = await res.json()
-        if (data.success) {
-          setCoverage(data)
-        }
+        if (data.success) setCoverage(data)
       } catch {
         if (!controller.signal.aborted) setCoverage(null)
       }
@@ -218,6 +227,40 @@ export function StoryboardClient({
       setError(err instanceof Error ? err.message : 'AI 生成 storyboard 失敗')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handlePartRegenerate(role: ScriptPartRole) {
+    const label = PART_LABELS[role] ?? role
+    const confirmed = window.confirm(
+      `重新生成「${label}」？\n\n` +
+        '呢個動作會刪除呢個 part 而家所有 shots，然後 AI 重新生成。\n' +
+        '其他 part 嘅 shots 會保留。\n\n' +
+        '生成需時約 10-30 秒。'
+    )
+    if (!confirmed) return
+
+    setPartRegenerating(role)
+    setError(null)
+    try {
+      const res = await fetch(`/api/storyboards/${storyboard.id}/generate-ai-part`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scriptPartRole: role }),
+      })
+      const data = await res.json()
+      if (res.status === 422 && data.coverage) {
+        throw new Error(formatCoverageError(data))
+      }
+      if (!res.ok || !data.success) {
+        throw new Error(data.error ?? '重新生成 part 失敗')
+      }
+      await refreshShots()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '重新生成 part 失敗')
+      await refreshShots().catch(() => undefined)
+    } finally {
+      setPartRegenerating(null)
     }
   }
 
@@ -466,7 +509,9 @@ export function StoryboardClient({
                   visualModes={visualModes}
                   footageSources={footageSources}
                   savingShotId={savingShotId}
+                  partRegenerating={partRegenerating}
                   validationByShotId={validationByShotId}
+                  onRegeneratePart={handlePartRegenerate}
                   onAddShot={handleAddShot}
                   onDeleteShot={handleDeleteShot}
                   onMoveShot={handleMoveShot}

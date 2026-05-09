@@ -17,7 +17,9 @@ interface ShotListProps {
   visualModes: VisualMode[]
   footageSources: FootageSource[]
   savingShotId: string | null
+  partRegenerating: ScriptPartRole | null
   validationByShotId?: Map<string, HallucinatedShot>
+  onRegeneratePart: (role: ScriptPartRole) => void
   onAddShot: (role: ScriptPartRole) => void
   onDeleteShot: (shotId: string) => void
   onMoveShot: (shotId: string, direction: 'up' | 'down') => void
@@ -49,22 +51,44 @@ export function ShotList({
   visualModes,
   footageSources,
   savingShotId,
+  partRegenerating,
   validationByShotId,
+  onRegeneratePart,
   onAddShot,
   onDeleteShot,
   onMoveShot,
   onOptimisticUpdate,
   onServerUpdate,
 }: ShotListProps) {
+  const isRegenerating = partRegenerating === part.role
+
   return (
     <section style={sectionStyle}>
-      <div>
-        <h3 style={{ margin: 0 }}>
-          {part.order + 1}. {part.roleLabel ?? part.role}
-        </h3>
-        <p style={{ margin: '6px 0 0', color: 'var(--muted)' }}>
-          {shots.length} shots
-        </p>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <h3 style={{ margin: 0 }}>
+            {part.order + 1}. {part.roleLabel ?? part.role}
+          </h3>
+          <p style={{ margin: '6px 0 0', color: 'var(--muted)' }}>
+            {shots.length} shots
+          </p>
+        </div>
+        <button
+          type="button"
+          style={buttonStyle}
+          disabled={!!partRegenerating}
+          onClick={() => onRegeneratePart(part.role)}
+        >
+          {isRegenerating ? '生成中...' : '重新生成呢個 part'}
+        </button>
       </div>
 
       {shots.length === 0 ? (

@@ -1,4 +1,4 @@
-import type { Script } from './types'
+import type { Script, ScriptPart } from './types'
 
 export interface GeneratedShotLike {
   scriptExcerpt?: string
@@ -30,10 +30,8 @@ export function getOriginalScriptText(script: Script): string {
     .join(' ')
 }
 
-export function splitScriptIntoSentences(script: Script): string[] {
-  const allParts = getOriginalScriptText(script)
-
-  return allParts
+export function splitContentIntoSentences(content: string): string[] {
+  return content
     .split(/([。！？；])/g)
     .reduce<string[]>((acc, current, index, parts) => {
       if (index % 2 === 0 && current.trim()) {
@@ -43,6 +41,10 @@ export function splitScriptIntoSentences(script: Script): string[] {
       return acc
     }, [])
     .filter(Boolean)
+}
+
+export function splitScriptIntoSentences(script: Script): string[] {
+  return splitContentIntoSentences(getOriginalScriptText(script))
 }
 
 function normalizeWithMap(text: string): {
@@ -70,15 +72,15 @@ function normalizeForCoverage(text: string): string {
 
 export function findLongestPrefixMatch(
   excerpt: string,
-  originalScript: string
+  originalText: string
 ): { matchedPortion: string; unmatchedPortion: string } {
   const { normalized: normalizedExcerpt, originalEndByNormalizedIndex } =
     normalizeWithMap(excerpt)
-  const normalizedScript = normalizeForCoverage(originalScript)
+  const normalizedOriginal = normalizeForCoverage(originalText)
 
   for (let length = normalizedExcerpt.length; length >= 5; length -= 1) {
     const prefix = normalizedExcerpt.slice(0, length)
-    if (normalizedScript.includes(prefix)) {
+    if (normalizedOriginal.includes(prefix)) {
       const splitPoint = originalEndByNormalizedIndex[length - 1] ?? 0
       return {
         matchedPortion: excerpt.slice(0, splitPoint),
@@ -93,13 +95,12 @@ export function findLongestPrefixMatch(
   }
 }
 
-export function validateScriptCoverage(
-  script: Script,
+function validateCoverageAgainstText(
+  originalText: string,
   shots: GeneratedShotLike[]
 ): CoverageResult {
-  const sentences = splitScriptIntoSentences(script)
-  const originalScriptText = getOriginalScriptText(script)
-  const normalizedScript = normalizeForCoverage(originalScriptText)
+  const sentences = splitContentIntoSentences(originalText)
+  const normalizedOriginal = normalizeForCoverage(originalText)
   const concatenatedShots = shots
     .map((shot) => shot.scriptExcerpt ?? '')
     .join(' ')
@@ -131,14 +132,14 @@ export function validateScriptCoverage(
     }
 
     const normalizedExcerpt = normalizeForCoverage(excerpt)
-    if (normalizedScript.includes(normalizedExcerpt)) {
+    if (normalizedOriginal.includes(normalizedExcerpt)) {
       reverseCoveredCount += 1
       return
     }
 
     const { matchedPortion, unmatchedPortion } = findLongestPrefixMatch(
       excerpt,
-      originalScriptText
+      originalText
     )
 
     hallucinatedShots.push({
@@ -168,6 +169,20 @@ export function validateScriptCoverage(
   }
 }
 
+export function validateScriptCoverage(
+  script: Script,
+  shots: GeneratedShotLike[]
+): CoverageResult {
+  return validateCoverageAgainstText(getOriginalScriptText(script), shots)
+}
+
+export function validatePartCoverage(
+  targetPart: ScriptPart,
+  shots: GeneratedShotLike[]
+): CoverageResult {
+  return validateCoverageAgainstText(targetPart.content, shots)
+}
+
 export function buildRetryPrompt(
   originalPrompt: string,
   generatedShots: GeneratedShotLike[],
@@ -188,14 +203,14 @@ export function buildRetryPrompt(
 
   if (hallucinatedShots.length > 0) {
     issueLines.push(
-      '## Hallucinated content (not present in original script, must be removed)',
+      '## Hallucinated content (not present in the allowed source text)',
       ...hallucinatedShots.map(
         (shot, index) =>
           `${index + 1}. Shot ${shot.shotIndex + 1}: "${shot.unmatchedPortion}"`
       ),
       '',
-      'Your previous script_excerpt contained content that does not exist in the original script.',
-      'Do not complete patterns such as "first, second" by adding a "third" unless the original script literally contains it.',
+      'Your previous script_excerpt contained text that does not exist in the allowed source text.',
+      'Do not narratively complete patterns such as "first, second" by adding a "third" unless it literally exists in source.',
       ''
     )
   }
@@ -206,9 +221,9 @@ export function buildRetryPrompt(
     ...issueLines,
     `Previous shot count: ${generatedShots.length}`,
     '',
-    'Regenerate the full storyboard and satisfy both requirements:',
-    '1. Forward coverage: every original script sentence appears in some shot.script_excerpt.',
-    '2. Reverse coverage: every shot.script_excerpt is a verbatim substring from the original script.',
+    'Regenerate the storyboard and satisfy both requirements:',
+    '1. Forward coverage: every source sentence appears in some shot.script_excerpt.',
+    '2. Reverse coverage: every shot.script_excerpt is a verbatim substring from source.',
     '',
     'STRICT: script_excerpt is source text, not a summary field.',
     'Do not rewrite, paraphrase, add transition sentences, or narratively complete missing structure.',

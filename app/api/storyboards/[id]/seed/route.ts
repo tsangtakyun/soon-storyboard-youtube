@@ -24,7 +24,7 @@ export async function POST(
 
   if ((count ?? 0) > 0) {
     return NextResponse.json(
-      { success: false, error: 'Storyboard 已經有 shots，不能重新 seed' },
+      { success: false, error: 'Storyboard 已有 shots，不能重新 seed。' },
       { status: 400 }
     )
   }
@@ -40,7 +40,7 @@ export async function POST(
   const defaultShots = await generateDefaultShots(script)
   if (defaultShots.length === 0) {
     return NextResponse.json(
-      { success: false, error: '呢個 script 未有可支援嘅 part role' },
+      { success: false, error: '呢個 script 沒有可支援嘅 part role。' },
       { status: 400 }
     )
   }

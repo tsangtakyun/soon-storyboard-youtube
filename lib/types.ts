@@ -18,6 +18,7 @@ export type FootageSourceSlug =
   | 'internet'
   | 'stock'
   | 'ai_generation'
+  | 'custom_motion_design'
   | 'synthetic_host'
 
 export type VisualModeSlug =

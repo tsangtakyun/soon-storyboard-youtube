@@ -42,11 +42,11 @@ function estimatePartDurationSeconds(
 
 function createDescription(content: string, shotIndex: number, shotCount: number) {
   const clean = content.replace(/\s+/g, ' ').trim()
-  if (!clean) return '補充呢個 shot 要呈現嘅畫面。'
+  if (!clean) return '新增一個 storyboard shot。'
 
   const sliceStart = Math.floor((clean.length / shotCount) * shotIndex)
   const snippet = clean.slice(sliceStart, sliceStart + 58).trim()
-  return `${snippet}${snippet.length < clean.length ? '...' : ''}`
+  return `${snippet}${snippet.length < clean.length ? '⋯' : ''}`
 }
 
 export async function generateDefaultShots(
@@ -94,13 +94,14 @@ export async function generateDefaultShots(
     )
 
     for (let index = 0; index < shotCount; index += 1) {
+      const excerpt = createDescription(part.content, index, shotCount)
       shots.push({
         scriptPartRole: part.role,
         displayOrder,
         partOrder: index,
-        description: createDescription(part.content, index, shotCount),
-        scriptExcerpt: createDescription(part.content, index, shotCount),
-        visualInstruction: '按讀稿內容設計對應畫面。',
+        description: excerpt,
+        scriptExcerpt: excerpt,
+        visualInstruction: '按讀稿內容建立對應畫面，之後可再手動細化。',
         visualModeSlug,
         footageSourceSlug,
         durationSeconds,

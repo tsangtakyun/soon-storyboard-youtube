@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 
 import {
   buildRetryPrompt,
+  validatePartCoverage,
   validateScriptCoverage,
   type CoverageResult,
   type HallucinatedShot,
@@ -10,6 +11,7 @@ import { getSupabaseServer } from './supabase-server'
 import type {
   FootageSourceSlug,
   Script,
+  ScriptPart,
   ScriptPartRole,
   VisualModeSlug,
 } from './types'
@@ -73,41 +75,15 @@ function targetShotRange(targetMinutes: number) {
   return '70-110'
 }
 
-function buildPrompt(
-  script: Script,
-  contentTypes: any[],
-  visualModes: any[],
-  footageSources: any[]
-) {
+function targetPartShotRange(part: ScriptPart) {
+  const ratio = part.durationRatio ?? 0
+  if (part.role === 'hook' || part.role === 'resolution') return '3-8'
+  if (ratio >= 0.18) return '8-16'
+  return '5-12'
+}
+
+function layer2PromptBlock(contentTypes: any[], visualModes: any[], footageSources: any[]) {
   return [
-    "You are SOON's senior documentary director. Convert the script into a production storyboard shot list.",
-    '',
-    'CRITICAL JSON RULES:',
-    '- Return one valid JSON object only: {"shots":[...]}',
-    '- No Markdown, no code fence, no comments.',
-    '- Every array element must be separated by a comma.',
-    '- Escape all quotation marks inside string values.',
-    '- Keep visual_instruction under 90 Chinese characters.',
-    '- Omit notes unless absolutely necessary.',
-    '',
-    'CRITICAL FULL SCRIPT COVERAGE:',
-    '- Storyboard is a 1:1 map between script and visuals.',
-    '- Every sentence in the script must appear in at least one shot.script_excerpt.',
-    '- Do not skip transitional, structural, or pivot sentences.',
-    '- Sentences beginning with "但係", "換言之", "另一方面", "首先", "其次", "最後", "我們就需要問" are mandatory coverage.',
-    '- You may combine 2-3 short sentences in one shot, but include the full original sentences.',
-    '- For long sentences, split across multiple shots if needed, but the substrings together must cover the whole sentence.',
-    '',
-    'CRITICAL NO HALLUCINATION:',
-    '- Every shot.script_excerpt must be a verbatim substring from the original script.',
-    '- Do not add narrative completion. If the script says "首先" and "其次" but has no "第三", do not invent "第三".',
-    '- Do not add transition sentences, bridge sentences, explanations, synonyms, or rewritten wording.',
-    '',
-    'Production directive:',
-    '- Minimize live_shoot. Prefer stock, internet footage, AI generation, and custom motion design.',
-    '- Use live_shoot mainly for host_thesis, organic_moment, comparison_contrast, and SOON home-city urban_life.',
-    '- synthetic_host is disabled. Never output footage_source_slug = synthetic_host.',
-    '',
     'Content types:',
     contentTypes
       .map(
@@ -124,6 +100,45 @@ function buildPrompt(
       .filter((fs) => fs.slug !== 'synthetic_host')
       .map((fs) => `- ${fs.slug}: ${fs.emoji} ${fs.label_zh}`)
       .join('\n'),
+  ].join('\n')
+}
+
+function jsonAndFidelityRules() {
+  return [
+    'CRITICAL JSON RULES:',
+    '- Return one valid JSON object only: {"shots":[...]}',
+    '- No Markdown, no code fence, no comments.',
+    '- Every array element must be separated by a comma.',
+    '- Escape all quotation marks inside string values.',
+    '- Keep visual_instruction under 90 Chinese characters.',
+    '- Omit notes unless absolutely necessary.',
+    '',
+    'CRITICAL FIDELITY RULES:',
+    '- Every source sentence must appear in at least one shot.script_excerpt.',
+    '- Every shot.script_excerpt must be a verbatim substring from the allowed source text.',
+    '- Do not skip transitional, structural, or pivot sentences.',
+    '- Do not rewrite, paraphrase, add transition sentences, or invent missing structure.',
+    '- If source says "首先" and "其次" but has no "第三", do not invent "第三".',
+  ].join('\n')
+}
+
+function buildPrompt(
+  script: Script,
+  contentTypes: any[],
+  visualModes: any[],
+  footageSources: any[]
+) {
+  return [
+    "You are SOON's senior documentary director. Convert the full script into a production storyboard shot list.",
+    '',
+    jsonAndFidelityRules(),
+    '',
+    'Production directive:',
+    '- Minimize live_shoot. Prefer stock, internet footage, AI generation, and custom_motion_design.',
+    '- Use custom_motion_design for data_viz and animation_diagram unless source evidence requires otherwise.',
+    '- synthetic_host is disabled. Never output footage_source_slug = synthetic_host.',
+    '',
+    layer2PromptBlock(contentTypes, visualModes, footageSources),
     '',
     'Script:',
     `Topic: ${script.topic}`,
@@ -137,13 +152,52 @@ function buildPrompt(
     '',
     'Task:',
     `Create ${targetShotRange(script.targetMinutes)} shots for this script.`,
-    'Each shot must contain:',
-    '- script_excerpt: exact narration excerpt from the script. Do not rewrite.',
-    '- visual_instruction: specific production visual direction. Do not just copy narration.',
-    '- content_type_slug, visual_mode_slug, footage_source_slug, duration_seconds.',
+    'Each shot must contain script_excerpt, visual_instruction, content_type_slug, visual_mode_slug, footage_source_slug, duration_seconds.',
     '',
     'Output schema:',
     '{"shots":[{"script_part_role":"hook","part_order":0,"script_excerpt":"...","visual_instruction":"...","content_type_slug":"host_thesis","visual_mode_slug":"talking_head","footage_source_slug":"live_shoot","duration_seconds":8}]}',
+  ].join('\n')
+}
+
+function buildPartPrompt(
+  script: Script,
+  targetPart: ScriptPart,
+  contentTypes: any[],
+  visualModes: any[],
+  footageSources: any[]
+) {
+  return [
+    "You are SOON's senior documentary director. Generate storyboard shots for ONE script part only.",
+    '',
+    jsonAndFidelityRules(),
+    '',
+    'Allowed source text is ONLY the target part content. Full script is context only.',
+    `Target part: ${targetPart.role} (${targetPart.order + 1}/${script.parts.length})`,
+    '',
+    'Production directive:',
+    '- Minimize live_shoot. Prefer stock, internet footage, AI generation, and custom_motion_design.',
+    '- Use custom_motion_design for statistic/data_viz and system_pattern/animation_diagram.',
+    '- synthetic_host is disabled. Never output footage_source_slug = synthetic_host.',
+    '',
+    layer2PromptBlock(contentTypes, visualModes, footageSources),
+    '',
+    'Full script context (do not generate shots for non-target parts):',
+    script.parts
+      .map((part) => {
+        const marker = part.role === targetPart.role ? ' TARGET' : ''
+        return `### ${part.role}${marker}\n${part.content}`
+      })
+      .join('\n\n'),
+    '',
+    'Target part content to cover exactly:',
+    targetPart.content,
+    '',
+    `Create ${targetPartShotRange(targetPart)} shots for this part only.`,
+    `Every output shot must have script_part_role = "${targetPart.role}".`,
+    'Each shot must contain script_excerpt, visual_instruction, content_type_slug, visual_mode_slug, footage_source_slug, duration_seconds.',
+    '',
+    'Output schema:',
+    `{"shots":[{"script_part_role":"${targetPart.role}","part_order":0,"script_excerpt":"...","visual_instruction":"...","content_type_slug":"host_thesis","visual_mode_slug":"talking_head","footage_source_slug":"live_shoot","duration_seconds":8}]}`,
   ].join('\n')
 }
 
@@ -276,9 +330,13 @@ function validateShots(
   }
 }
 
-function throwCoverageError(coverage: CoverageResult, shots: GeneratedShot[]) {
+function throwCoverageError(
+  label: string,
+  coverage: CoverageResult,
+  shots: GeneratedShot[]
+): never {
   throw new ScriptCoverageError(
-    `Storyboard generation 失敗：Forward missing ${coverage.missingSentences.length} 句，Hallucinated ${coverage.hallucinatedShots.length} shots。Retry 之後仍 incomplete。`,
+    `${label} generation 失敗：Forward missing ${coverage.missingSentences.length} 句，Hallucinated ${coverage.hallucinatedShots.length} shots。Retry 之後仍 incomplete。`,
     {
       missingSentences: coverage.missingSentences,
       hallucinatedShots: coverage.hallucinatedShots,
@@ -291,9 +349,7 @@ function throwCoverageError(coverage: CoverageResult, shots: GeneratedShot[]) {
   )
 }
 
-export async function generateAIStoryboard(
-  script: Script
-): Promise<GeneratedShot[]> {
+async function getGeneratorContext() {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new Error('Missing ANTHROPIC_API_KEY')
 
@@ -303,7 +359,19 @@ export async function generateAIStoryboard(
     fetchLayer2('footage_sources'),
   ])
 
-  const anthropic = new Anthropic({ apiKey })
+  return {
+    anthropic: new Anthropic({ apiKey }),
+    contentTypes,
+    visualModes,
+    footageSources,
+  }
+}
+
+export async function generateAIStoryboard(
+  script: Script
+): Promise<GeneratedShot[]> {
+  const { anthropic, contentTypes, visualModes, footageSources } =
+    await getGeneratorContext()
   const initialPrompt = buildPrompt(script, contentTypes, visualModes, footageSources)
 
   let shots = await generateShots(anthropic, initialPrompt)
@@ -322,9 +390,53 @@ export async function generateAIStoryboard(
   validateShots(shots, contentTypes, visualModes, footageSources)
   coverage = validateScriptCoverage(script, shots)
 
-  if (!coverage.covered) {
-    throwCoverageError(coverage, shots)
-  }
+  if (!coverage.covered) throwCoverageError('Storyboard', coverage, shots)
+  return shots
+}
 
+export async function generateAIStoryboardForPart(
+  script: Script,
+  targetPartRole: ScriptPartRole
+): Promise<GeneratedShot[]> {
+  const targetPart = script.parts.find((part) => part.role === targetPartRole)
+  if (!targetPart) throw new Error(`Script part "${targetPartRole}" not found`)
+
+  const { anthropic, contentTypes, visualModes, footageSources } =
+    await getGeneratorContext()
+  const initialPrompt = buildPartPrompt(
+    script,
+    targetPart,
+    contentTypes,
+    visualModes,
+    footageSources
+  )
+
+  let shots = await generateShots(anthropic, initialPrompt)
+  shots = shots.map((shot, index) => ({
+    ...shot,
+    scriptPartRole: targetPartRole,
+    partOrder: index,
+  }))
+  validateShots(shots, contentTypes, visualModes, footageSources)
+
+  let coverage = validatePartCoverage(targetPart, shots)
+  if (coverage.covered) return shots
+
+  const retryPrompt = buildRetryPrompt(
+    initialPrompt,
+    shots,
+    coverage.missingSentences,
+    coverage.hallucinatedShots
+  )
+  shots = await generateShots(anthropic, retryPrompt)
+  shots = shots.map((shot, index) => ({
+    ...shot,
+    scriptPartRole: targetPartRole,
+    partOrder: index,
+  }))
+  validateShots(shots, contentTypes, visualModes, footageSources)
+  coverage = validatePartCoverage(targetPart, shots)
+
+  if (!coverage.covered) throwCoverageError('Per-part storyboard', coverage, shots)
   return shots
 }
