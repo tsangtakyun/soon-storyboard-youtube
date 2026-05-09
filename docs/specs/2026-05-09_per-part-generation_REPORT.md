@@ -17,7 +17,7 @@
 | `lib/default-shot-generator.ts` | Modified | n/a | Clean strings; uses Layer 2 source priority |
 | `app/api/storyboards/[id]/seed/route.ts` | Modified | n/a | Clean errors |
 
-Commit hash: pending at report creation; final hash reported after commit.
+Implementation commit hash: `b83547d`
 
 Vercel URL: `https://soon-storyboard-youtube.vercel.app`
 
