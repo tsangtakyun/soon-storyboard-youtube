@@ -2,7 +2,7 @@
 
 > Date: 2026-05-10
 > Repo: soon-storyboard-youtube
-> Commit: TBD
+> Commit: ca15bf8
 > Deployment URL: https://soon-storyboard-youtube-git-main-tsangtakyun-4639s-projects.vercel.app/
 
 ## Section A: Changes
