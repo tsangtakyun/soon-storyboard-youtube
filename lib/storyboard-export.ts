@@ -21,6 +21,7 @@ export interface StoryboardJSON {
     id: string
     title: string | null
     status: string
+    subjectReference: string | null
     createdAt: string
   }
   shots: Array<{
@@ -93,6 +94,7 @@ export async function exportStoryboardAsJSON(
       id: storyboard.id,
       title: storyboard.title ?? null,
       status: storyboard.status,
+      subjectReference: storyboard.subject_reference ?? null,
       createdAt: storyboard.created_at,
     },
     shots: (shots ?? []).map((shot) => ({

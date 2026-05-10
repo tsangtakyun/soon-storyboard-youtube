@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useDebouncedCallback } from 'use-debounce'
 
 import { ShotList } from '@/components/ShotList'
 import type { HallucinatedShot } from '@/lib/script-coverage-validator'
@@ -129,6 +130,12 @@ export function StoryboardClient({
   const [coverage, setCoverage] = useState<CoverageReport | null>(null)
   const [expandedParts, setExpandedParts] = useState<Set<number>>(new Set())
   const [exporting, setExporting] = useState(false)
+  const [subjectReference, setSubjectReference] = useState(
+    storyboard.subjectReference ?? ''
+  )
+  const [referenceStatus, setReferenceStatus] = useState<'idle' | 'saving' | 'saved'>(
+    'idle'
+  )
 
   const enabledFootageSources = useMemo(
     () => footageSources.filter((source) => source.slug !== 'synthetic_host'),
@@ -203,6 +210,26 @@ export function StoryboardClient({
       return next
     })
   }
+
+  const debouncedSaveReference = useDebouncedCallback(async (value: string) => {
+    setReferenceStatus('saving')
+    try {
+      const res = await fetch(`/api/storyboards/${storyboard.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject_reference: value.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error ?? 'Subject reference 儲存失敗')
+      }
+      setReferenceStatus('saved')
+      window.setTimeout(() => setReferenceStatus('idle'), 1200)
+    } catch (err) {
+      setReferenceStatus('idle')
+      setError(err instanceof Error ? err.message : 'Subject reference 儲存失敗')
+    }
+  }, 1000)
 
   async function refreshShots() {
     const res = await fetch(`/api/storyboards/${storyboard.id}/shots`)
@@ -424,6 +451,50 @@ export function StoryboardClient({
           >
             {exporting ? 'Exporting...' : 'Export JSON'}
           </button>
+        </div>
+        <div
+          style={{
+            marginTop: 16,
+            borderTop: '1px solid var(--line)',
+            paddingTop: 14,
+            display: 'grid',
+            gap: 8,
+          }}
+        >
+          <label htmlFor="subject-reference" style={{ fontWeight: 700 }}>
+            Subject reference
+          </label>
+          <p style={{ color: 'var(--muted)', margin: 0, lineHeight: 1.55 }}>
+            餐廳名、事件、人名、年份。Internet prompt 會用呢個做 Gemini search
+            anchor。
+          </p>
+          <input
+            id="subject-reference"
+            type="text"
+            value={subjectReference}
+            placeholder="e.g. Jian Zao Ipoh Curry Noodle, Singapore"
+            style={{
+              border: '1px solid var(--line)',
+              borderRadius: 6,
+              background: '#fff',
+              color: '#000',
+              padding: '10px 12px',
+              maxWidth: 720,
+            }}
+            onChange={(event) => {
+              const value = event.target.value
+              setSubjectReference(value)
+              setReferenceStatus('saving')
+              debouncedSaveReference(value)
+            }}
+          />
+          <span style={{ color: 'var(--muted)', fontSize: 12 }}>
+            {referenceStatus === 'saving'
+              ? 'Saving reference...'
+              : referenceStatus === 'saved'
+                ? 'Reference saved'
+                : ' '}
+          </span>
         </div>
       </section>
 

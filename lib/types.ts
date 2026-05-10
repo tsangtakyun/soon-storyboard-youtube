@@ -146,6 +146,7 @@ export interface Storyboard {
   id: string
   scriptId: string
   title?: string
+  subjectReference?: string
   status: 'draft' | 'in_progress' | 'completed'
   shots: StoryboardShot[]
   createdAt: string

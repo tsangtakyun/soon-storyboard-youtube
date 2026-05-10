@@ -43,7 +43,7 @@ export async function generateProductionPrompt(
     throw new Error(`No production prompt template for ${shot.footage_source_slug}`)
   }
 
-  const [visualModeResult, contentTypeResult] = await Promise.all([
+  const [visualModeResult, contentTypeResult, storyboardResult] = await Promise.all([
     supabase
       .from('layer_2_visual_modes')
       .select('label_zh,label_en')
@@ -56,6 +56,11 @@ export async function generateProductionPrompt(
           .eq('slug', shot.content_type_slug)
           .maybeSingle()
       : Promise.resolve({ data: null }),
+    supabase
+      .from('storyboards')
+      .select('subject_reference')
+      .eq('id', shot.storyboard_id)
+      .maybeSingle(),
   ])
 
   const prompt = fillTemplate(footageSource.production_prompt_template, {
@@ -71,6 +76,8 @@ export async function generateProductionPrompt(
       contentTypeResult.data?.label_en ??
       shot.content_type_slug ??
       'unknown',
+    subject_reference:
+      storyboardResult.data?.subject_reference?.trim() || '（無）',
   })
 
   const anthropic = new Anthropic({ apiKey })

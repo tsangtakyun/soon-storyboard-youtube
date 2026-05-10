@@ -66,6 +66,7 @@ function normalizeImportData(data: ImportableStoryboardJSON): StoryboardJSON {
       id: '',
       title: script.title ?? topic,
       status: 'draft',
+      subjectReference: null,
       createdAt: new Date().toISOString(),
     },
     shots: [],
@@ -109,6 +110,7 @@ export async function importStoryboardFromJSON(input: ImportableStoryboardJSON):
     .insert({
       script_id: newScript.id,
       title: data.storyboard.title,
+      subject_reference: data.storyboard.subjectReference ?? null,
       status: 'draft',
     })
     .select('id')
