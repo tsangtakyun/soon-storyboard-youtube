@@ -130,6 +130,8 @@ export function StoryboardClient({
   const [coverage, setCoverage] = useState<CoverageReport | null>(null)
   const [expandedParts, setExpandedParts] = useState<Set<number>>(new Set())
   const [exporting, setExporting] = useState(false)
+  const [driveExporting, setDriveExporting] = useState(false)
+  const [driveDocUrl, setDriveDocUrl] = useState<string | null>(null)
   const [subjectReference, setSubjectReference] = useState(
     storyboard.subjectReference ?? ''
   )
@@ -265,6 +267,35 @@ export function StoryboardClient({
       setError(err instanceof Error ? err.message : 'Export JSON 失敗')
     } finally {
       setExporting(false)
+    }
+  }
+
+  async function handleDriveExport() {
+    setDriveExporting(true)
+    setDriveDocUrl(null)
+    setError(null)
+    try {
+      const res = await fetch(`/api/storyboards/${storyboard.id}/export-drive`, {
+        method: 'POST',
+      })
+      const data = await res.json()
+
+      if (res.status === 401 && data.needsAuth) {
+        const returnTo = encodeURIComponent(window.location.pathname)
+        window.location.href = `/api/auth/google?returnTo=${returnTo}`
+        return
+      }
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error ?? 'Drive export failed')
+      }
+
+      setDriveDocUrl(data.docUrl)
+      window.open(data.docUrl, '_blank', 'noopener,noreferrer')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Drive export failed')
+    } finally {
+      setDriveExporting(false)
     }
   }
 
@@ -451,6 +482,24 @@ export function StoryboardClient({
           >
             {exporting ? 'Exporting...' : 'Export JSON'}
           </button>
+          <button
+            type="button"
+            style={{ ...buttonStyle, background: '#31533f' }}
+            onClick={handleDriveExport}
+            disabled={driveExporting}
+          >
+            {driveExporting ? 'Exporting Drive...' : 'Export Drive Doc'}
+          </button>
+          {driveDocUrl && (
+            <a
+              href={driveDocUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'var(--accent)', alignSelf: 'center' }}
+            >
+              Open latest Doc
+            </a>
+          )}
         </div>
         <div
           style={{
