@@ -6,7 +6,7 @@ export async function importStoryboardFromJSON(data: StoryboardJSON): Promise<{
   newStoryboardId: string
   shotCount: number
 }> {
-  if (data.version !== '1.0') {
+  if (data.version !== '1.0' && data.version !== 1) {
     throw new Error(`Unsupported JSON version: ${data.version}`)
   }
   if (!data.script || !data.storyboard || !Array.isArray(data.shots)) {

@@ -1,7 +1,7 @@
 import { getSupabaseServer } from './supabase-server'
 
 export interface StoryboardJSON {
-  version: '1.0'
+  version: '1.0' | 1
   exportedAt: string
   script: {
     id: string
