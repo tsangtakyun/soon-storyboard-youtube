@@ -1,17 +1,86 @@
 import { getSupabaseServer } from './supabase-server'
 import type { StoryboardJSON } from './storyboard-export'
 
-export async function importStoryboardFromJSON(data: StoryboardJSON): Promise<{
+type ImportableStoryboardJSON = StoryboardJSON | LegacySoonScriptProject
+
+interface LegacySoonScriptProject {
+  version: number | string
+  type?: string
+  topic?: string
+  background?: string | null
+  framework?: string
+  hookVariant?: string
+  tone?: string
+  targetMinutes?: number
+  outlineId?: string | null
+  structuredScript?: {
+    title?: string | null
+    topic?: string
+    background?: string | null
+    framework?: string
+    hookVariant?: string
+    tone?: string
+    targetMinutes?: number
+    outlineId?: string | null
+    parts?: unknown[]
+    pivotSentences?: unknown
+    meta?: {
+      generatedAt?: string
+      schemaVersion?: string
+    }
+  }
+}
+
+function normalizeImportData(data: ImportableStoryboardJSON): StoryboardJSON {
+  const maybeStoryboard = data as StoryboardJSON
+  if (maybeStoryboard.script && maybeStoryboard.storyboard && Array.isArray(maybeStoryboard.shots)) {
+    return maybeStoryboard
+  }
+
+  const legacy = data as LegacySoonScriptProject
+  if (legacy.type !== 'soon-script-project' || !legacy.structuredScript) {
+    throw new Error('Invalid storyboard JSON structure')
+  }
+
+  const script = legacy.structuredScript
+  const topic = script.topic ?? legacy.topic ?? 'Imported SOON script'
+
+  return {
+    version: '1.0',
+    exportedAt: new Date().toISOString(),
+    script: {
+      id: '',
+      topic,
+      background: script.background ?? legacy.background ?? null,
+      framework: script.framework ?? legacy.framework ?? 'fern_6part',
+      hookVariant: script.hookVariant ?? legacy.hookVariant ?? 'thesis',
+      tone: script.tone ?? legacy.tone ?? 'documentary',
+      targetMinutes: script.targetMinutes ?? legacy.targetMinutes ?? 10,
+      parts: script.parts ?? [],
+      pivotSentences: script.pivotSentences ?? null,
+      title: script.title ?? topic,
+      model: 'legacy-soon-project-json',
+      generatedAt: script.meta?.generatedAt ?? null,
+    },
+    storyboard: {
+      id: '',
+      title: script.title ?? topic,
+      status: 'draft',
+      createdAt: new Date().toISOString(),
+    },
+    shots: [],
+  }
+}
+
+export async function importStoryboardFromJSON(input: ImportableStoryboardJSON): Promise<{
   newScriptId: string
   newStoryboardId: string
   shotCount: number
 }> {
-  if (!['1', '1.0'].includes(String(data.version))) {
-    throw new Error(`Unsupported JSON version: ${data.version}`)
+  if (!['1', '1.0'].includes(String(input.version))) {
+    throw new Error(`Unsupported JSON version: ${input.version}`)
   }
-  if (!data.script || !data.storyboard || !Array.isArray(data.shots)) {
-    throw new Error('Invalid storyboard JSON structure')
-  }
+  const data = normalizeImportData(input)
 
   const supabase = getSupabaseServer()
 
