@@ -64,12 +64,12 @@ const buttonStyle: React.CSSProperties = {
 }
 
 const PART_LABELS: Partial<Record<ScriptPartRole, string>> = {
-  hook: '鈎子',
-  setup: '鋪陳',
-  detail: '細節',
-  complication: '矛盾',
-  depth: '深層',
-  resolution: '收結',
+  hook: 'Hook',
+  setup: 'Setup',
+  detail: 'Detail',
+  complication: 'Complication',
+  depth: 'Depth',
+  resolution: 'Resolution',
 }
 
 function sortShots(shots: StoryboardShot[]) {
@@ -95,18 +95,22 @@ function formatCoverageError(data: any) {
 
   return [
     'AI 生成失敗：script fidelity validation 未通過。',
-    `Forward coverage：${((data.coverage.forwardRatio ?? 0) * 100).toFixed(1)}%`,
-    `Reverse coverage：${((data.coverage.reverseRatio ?? 0) * 100).toFixed(1)}%`,
+    `Forward coverage: ${((data.coverage.forwardRatio ?? 0) * 100).toFixed(1)}%`,
+    `Reverse coverage: ${((data.coverage.reverseRatio ?? 0) * 100).toFixed(1)}%`,
     '',
     missing.length > 0 ? `Missing sentences (${missing.length}):\n${missingPreview}` : '',
     hallucinated.length > 0
       ? `Hallucinated shots (${hallucinated.length}):\n${hallucinationPreview}`
       : '',
     '',
-    '可以先用 Layer 2 default fallback，或者保留呢個 case 畀開發者調 prompt。',
+    '可以用 Layer 2 default fallback，或者重新嘗試生成呢個 part。',
   ]
     .filter(Boolean)
     .join('\n')
+}
+
+function safeFilename(value: string) {
+  return value.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80)
 }
 
 export function StoryboardClient({
@@ -124,6 +128,7 @@ export function StoryboardClient({
   const [error, setError] = useState<string | null>(null)
   const [coverage, setCoverage] = useState<CoverageReport | null>(null)
   const [expandedParts, setExpandedParts] = useState<Set<number>>(new Set())
+  const [exporting, setExporting] = useState(false)
 
   const enabledFootageSources = useMemo(
     () => footageSources.filter((source) => source.slug !== 'synthetic_host'),
@@ -203,9 +208,37 @@ export function StoryboardClient({
     const res = await fetch(`/api/storyboards/${storyboard.id}/shots`)
     const data = await res.json()
     if (!res.ok || !data.success) {
-      throw new Error(data.error ?? '載入 shots 失敗')
+      throw new Error(data.error ?? '讀取 shots 失敗')
     }
     setShots(sortShots(data.shots))
+  }
+
+  async function handleExportJSON() {
+    setExporting(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/storyboards/${storyboard.id}/export-json`, {
+        method: 'POST',
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error ?? 'Export JSON 失敗')
+      }
+
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `storyboard-${safeFilename(script.title ?? script.topic)}-${Date.now()}.json`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export JSON 失敗')
+    } finally {
+      setExporting(false)
+    }
   }
 
   async function handleAIGenerate() {
@@ -273,11 +306,11 @@ export function StoryboardClient({
       })
       const data = await res.json()
       if (!res.ok || !data.success) {
-        throw new Error(data.error ?? '生成初始 shots 失敗')
+        throw new Error(data.error ?? '生成預設 shots 失敗')
       }
       setShots(sortShots(data.shots))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生成初始 shots 失敗')
+      setError(err instanceof Error ? err.message : '生成預設 shots 失敗')
     } finally {
       setLoading(false)
     }
@@ -294,7 +327,7 @@ export function StoryboardClient({
           scriptPartRole: role,
           visualModeSlug: visualModes[0]?.slug ?? 'talking_head',
           footageSourceSlug: enabledFootageSources[0]?.slug ?? 'live_shoot',
-          description: '新增一個 storyboard shot。',
+          description: '新 storyboard shot',
         }),
       })
       const data = await res.json()
@@ -365,13 +398,33 @@ export function StoryboardClient({
         <p style={{ color: 'var(--accent)', fontSize: 12, letterSpacing: '0.08em' }}>
           SOON STORYBOARD
         </p>
-        <h1 style={{ margin: '8px 0 10px', fontSize: 30 }}>
-          {script.title ?? script.topic}
-        </h1>
-        <p style={{ color: 'var(--muted)', margin: 0 }}>
-          Script ID: <code>{script.id}</code> · Storyboard ID:{' '}
-          <code>{storyboard.id}</code>
-        </p>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 12,
+            alignItems: 'flex-start',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <h1 style={{ margin: '8px 0 10px', fontSize: 30 }}>
+              {script.title ?? script.topic}
+            </h1>
+            <p style={{ color: 'var(--muted)', margin: 0 }}>
+              Script ID: <code>{script.id}</code> · Storyboard ID:{' '}
+              <code>{storyboard.id}</code>
+            </p>
+          </div>
+          <button
+            type="button"
+            style={buttonStyle}
+            onClick={handleExportJSON}
+            disabled={exporting}
+          >
+            {exporting ? 'Exporting...' : 'Export JSON'}
+          </button>
+        </div>
       </section>
 
       {error && (
@@ -428,7 +481,7 @@ export function StoryboardClient({
                       style={{ ...buttonStyle, marginTop: 10, padding: '8px 10px' }}
                       onClick={() => togglePart(part.order)}
                     >
-                      {isExpanded ? '▲ 收起' : '▼ 展開全文'}
+                      {isExpanded ? '收起' : '展開全文'}
                     </button>
                   )}
                 </article>
@@ -480,7 +533,7 @@ export function StoryboardClient({
                   onClick={handleAIGenerate}
                   disabled={loading}
                 >
-                  {loading ? 'AI 生成中（30-60 秒）...' : 'AI 生成 storyboard'}
+                  {loading ? 'AI 生成中 30-60 秒...' : 'AI 生成 storyboard'}
                 </button>
                 <button
                   type="button"
@@ -496,8 +549,8 @@ export function StoryboardClient({
 
           {shots.length === 0 ? (
             <p style={{ color: 'var(--muted)', lineHeight: 1.7 }}>
-              呢個 storyboard 暫時未有 shot。你可以用 AI 生成 content-aware
-              storyboard；如果 Anthropic key 未設定，可以先用 Layer 2 default fallback。
+              呢個 storyboard 暫時未有 shot。可以用 AI 生成 content-aware storyboard，
+              或用 Layer 2 default fallback。
             </p>
           ) : (
             <div style={{ display: 'grid', gap: 14, marginTop: 16 }}>

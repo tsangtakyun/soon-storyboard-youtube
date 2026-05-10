@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useDebouncedCallback } from 'use-debounce'
 
 import type {
@@ -36,7 +36,7 @@ const cardStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,0.035)',
   padding: 14,
   display: 'grid',
-  gap: 10,
+  gap: 12,
 }
 
 const rowStyle: React.CSSProperties = {
@@ -108,13 +108,37 @@ export function ShotCard({
     shot.visualInstruction ?? ''
   )
   const [notes, setNotes] = useState(shot.notes ?? '')
+  const [productionPrompt, setProductionPrompt] = useState(
+    shot.productionPrompt ?? ''
+  )
+  const [generatingPrompt, setGeneratingPrompt] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
   const [error, setError] = useState<string | null>(null)
+
+  const currentFootageSource = useMemo(
+    () => footageSources.find((source) => source.slug === shot.footageSourceSlug),
+    [footageSources, shot.footageSourceSlug]
+  )
+
+  const isPromptDisabled =
+    !currentFootageSource?.productionPromptTemplate ||
+    currentFootageSource.slug === 'synthetic_host'
+  const isPromptStale =
+    !!shot.productionPromptForSource &&
+    shot.productionPromptForSource !== shot.footageSourceSlug
 
   useEffect(() => {
     setScriptExcerpt(shot.scriptExcerpt ?? shot.description)
     setVisualInstruction(shot.visualInstruction ?? '')
     setNotes(shot.notes ?? '')
-  }, [shot.description, shot.notes, shot.scriptExcerpt, shot.visualInstruction])
+    setProductionPrompt(shot.productionPrompt ?? '')
+  }, [
+    shot.description,
+    shot.notes,
+    shot.productionPrompt,
+    shot.scriptExcerpt,
+    shot.visualInstruction,
+  ])
 
   const debouncedSave = useDebouncedCallback(
     async (shotId: string, updates: StoryboardShotUpdate) => {
@@ -140,6 +164,35 @@ export function ShotCard({
     }
   }
 
+  async function handleGeneratePrompt() {
+    if (isPromptDisabled) return
+
+    setGeneratingPrompt(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/shots/${shot.id}/generate-prompt`, {
+        method: 'POST',
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error ?? 'Production prompt 生成失敗')
+      }
+      onServerUpdate(data.shot)
+      setProductionPrompt(data.shot.productionPrompt ?? '')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Production prompt 生成失敗')
+    } finally {
+      setGeneratingPrompt(false)
+    }
+  }
+
+  async function handleCopyPrompt() {
+    if (!productionPrompt) return
+    await navigator.clipboard.writeText(productionPrompt)
+    setCopyState('copied')
+    window.setTimeout(() => setCopyState('idle'), 1200)
+  }
+
   return (
     <article style={cardStyle}>
       {validation?.isHallucinated && (
@@ -153,11 +206,11 @@ export function ShotCard({
             lineHeight: 1.55,
           }}
         >
-          <strong>此 shot 嘅讀稿原文包含 script 入面不存在嘅內容。</strong>
+          <strong>此 shot 嘅讀稿原文含有 script 入面不存在嘅內容</strong>
           <details style={{ marginTop: 6 }}>
             <summary>查看 detail</summary>
             <p style={{ marginBottom: 6 }}>
-              Matched: {validation.matchedPortion || '無可確認原文'}
+              Matched: {validation.matchedPortion || '無可匹配內容'}
             </p>
             <p style={{ margin: 0 }}>
               Hallucinated: {validation.unmatchedPortion || '未能定位'}
@@ -222,7 +275,7 @@ export function ShotCard({
         <textarea
           style={textareaStyle}
           value={visualInstruction}
-          placeholder="例：Medium shot 主持坐 studio sofa，eye-level，warm lighting。"
+          placeholder="例如：Medium shot 主持坐 studio sofa, eye-level, warm lighting"
           onChange={(event) => {
             const value = event.target.value
             setVisualInstruction(value)
@@ -319,6 +372,78 @@ export function ShotCard({
           }}
         />
       </label>
+
+      <section
+        style={{
+          border: '1px solid var(--line)',
+          borderRadius: 8,
+          padding: 12,
+          display: 'grid',
+          gap: 10,
+          background: 'rgba(255,255,255,0.025)',
+        }}
+      >
+        <div style={{ ...rowStyle, justifyContent: 'space-between' }}>
+          <strong>Production Prompt</strong>
+          <div style={rowStyle}>
+            <button
+              type="button"
+              style={buttonStyle}
+              disabled={generatingPrompt || isPromptDisabled}
+              onClick={handleGeneratePrompt}
+            >
+              {generatingPrompt
+                ? '生成中...'
+                : productionPrompt
+                  ? '重新生成'
+                  : currentFootageSource?.productionPromptLabel ?? '生成 prompt'}
+            </button>
+            {productionPrompt && (
+              <button type="button" style={buttonStyle} onClick={handleCopyPrompt}>
+                {copyState === 'copied' ? '已 copy' : 'Copy'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {isPromptDisabled && (
+          <p style={{ color: 'var(--muted)', margin: 0 }}>
+            呢個 footage source 暫時未有 production prompt template。
+          </p>
+        )}
+
+        {isPromptStale && (
+          <div
+            style={{
+              border: '1px solid #ffb86b',
+              background: 'rgba(255,184,107,0.12)',
+              color: '#ffd6a3',
+              borderRadius: 8,
+              padding: 10,
+            }}
+          >
+            Footage source 已由 {shot.productionPromptForSource} 改成{' '}
+            {shot.footageSourceSlug}，呢段 prompt 可能已過時，建議重新生成。
+          </div>
+        )}
+
+        {productionPrompt ? (
+          <textarea
+            style={{ ...textareaStyle, minHeight: 160 }}
+            value={productionPrompt}
+            onChange={(event) => {
+              const value = event.target.value
+              setProductionPrompt(value)
+              onOptimisticUpdate(shot.id, { productionPrompt: value })
+              debouncedSave(shot.id, { productionPrompt: value })
+            }}
+          />
+        ) : (
+          <p style={{ color: 'var(--muted)', margin: 0 }}>
+            撳上面 button，按 footage source 生成下一步 production prompt。
+          </p>
+        )}
+      </section>
 
       {error && <p style={{ color: '#ffb5b5', margin: 0 }}>{error}</p>}
     </article>

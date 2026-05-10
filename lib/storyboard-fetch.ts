@@ -207,6 +207,9 @@ export function mapShotRow(row: any): StoryboardShot {
     generationMetadata: row.generation_metadata ?? undefined,
     stockKeyword: row.stock_keyword ?? undefined,
     notes: row.notes ?? undefined,
+    productionPrompt: row.production_prompt ?? undefined,
+    productionPromptGeneratedAt: row.production_prompt_generated_at ?? undefined,
+    productionPromptForSource: row.production_prompt_for_source ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

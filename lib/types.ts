@@ -94,6 +94,8 @@ export interface FootageSource {
   emoji: string
   description: string
   displayOrder: number
+  productionPromptLabel?: string
+  productionPromptTemplate?: string
 }
 
 export interface StoryboardShot {
@@ -114,6 +116,9 @@ export interface StoryboardShot {
   generationMetadata?: Record<string, unknown>
   stockKeyword?: string
   notes?: string
+  productionPrompt?: string
+  productionPromptGeneratedAt?: string
+  productionPromptForSource?: FootageSourceSlug
   createdAt: string
   updatedAt: string
 }
@@ -133,6 +138,8 @@ export interface StoryboardShotUpdate {
   durationSeconds?: number | null
   stockKeyword?: string | null
   notes?: string | null
+  productionPrompt?: string | null
+  productionPromptForSource?: FootageSourceSlug | null
 }
 
 export interface Storyboard {

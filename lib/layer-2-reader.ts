@@ -29,7 +29,9 @@ export async function fetchFootageSources(): Promise<FootageSource[]> {
   const supabase = getSupabaseServer()
   const { data, error } = await supabase
     .from('layer_2_footage_sources')
-    .select('slug,label_zh,emoji,description,display_order')
+    .select(
+      'slug,label_zh,emoji,description,display_order,production_prompt_label,production_prompt_template'
+    )
     .order('display_order', { ascending: true })
 
   if (error) {
@@ -42,6 +44,8 @@ export async function fetchFootageSources(): Promise<FootageSource[]> {
     emoji: row.emoji,
     description: row.description,
     displayOrder: row.display_order,
+    productionPromptLabel: row.production_prompt_label ?? undefined,
+    productionPromptTemplate: row.production_prompt_template ?? undefined,
   }))
 }
 

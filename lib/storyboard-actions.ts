@@ -46,6 +46,14 @@ export function mapShotUpdate(body: Record<string, unknown>) {
   if ('stockKeyword' in body) update.stock_keyword = body.stockKeyword || null
   if ('stock_keyword' in body) update.stock_keyword = body.stock_keyword || null
   if ('notes' in body) update.notes = body.notes || null
+  if ('productionPrompt' in body) update.production_prompt = body.productionPrompt || null
+  if ('production_prompt' in body) update.production_prompt = body.production_prompt || null
+  if ('productionPromptForSource' in body) {
+    update.production_prompt_for_source = body.productionPromptForSource || null
+  }
+  if ('production_prompt_for_source' in body) {
+    update.production_prompt_for_source = body.production_prompt_for_source || null
+  }
 
   return update
 }
