@@ -453,7 +453,7 @@ export function StoryboardClient({
   return (
     <main style={pageStyle}>
       <section style={panelStyle}>
-        <p style={{ color: 'var(--accent)', fontSize: 12, letterSpacing: '0.08em' }}>
+        <p className="soon-hide-embedded" style={{ color: 'var(--accent)', fontSize: 12, letterSpacing: '0.08em' }}>
           SOON STORYBOARD
         </p>
         <div

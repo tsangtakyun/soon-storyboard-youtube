@@ -88,3 +88,11 @@ body {
   font-weight: 600;
   color: var(--soon-purple-light);
 }
+
+body.embedded .soon-hide-embedded {
+  display: none !important;
+}
+
+body.embedded {
+  padding-top: 0 !important;
+}

@@ -58,7 +58,7 @@ export default function LandingPage() {
   return (
     <main style={pageStyle}>
       <section style={panelStyle}>
-        <div>
+        <div className="soon-hide-embedded">
           <p
             style={{
               color: 'var(--accent)',
