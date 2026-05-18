@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 const pageStyle: React.CSSProperties = {
@@ -31,6 +31,15 @@ export default function LandingPage() {
   const router = useRouter()
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const scriptId = params.get('scriptId')
+    if (scriptId) {
+      const embeddedQuery = params.get('embedded') === 'true' ? '?embedded=true' : ''
+      router.push(`/storyboard/${scriptId}${embeddedQuery}`)
+    }
+  }, [router])
 
   async function handleImportFile(file: File) {
     setImporting(true)

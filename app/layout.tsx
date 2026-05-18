@@ -2,6 +2,7 @@ import './globals.css'
 import type { Metadata } from 'next'
 
 import { EmbeddedMode } from '@/components/EmbeddedMode'
+import { SoonAuthReceiver } from '@/components/SoonAuthReceiver'
 
 export const metadata: Metadata = {
   title: 'SOON Storyboard YouTube',
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <EmbeddedMode />
+        <SoonAuthReceiver />
         {children}
       </body>
     </html>
