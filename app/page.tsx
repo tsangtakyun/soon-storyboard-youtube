@@ -29,17 +29,71 @@ const inputStyle: React.CSSProperties = {
 
 export default function LandingPage() {
   const router = useRouter()
+  const [isEmbedded, setIsEmbedded] = useState(false)
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const scriptId = params.get('scriptId')
+    setIsEmbedded(params.get('embedded') === 'true')
     if (scriptId) {
       const embeddedQuery = params.get('embedded') === 'true' ? '?embedded=true' : ''
       router.push(`/storyboard/${scriptId}${embeddedQuery}`)
     }
   }, [router])
+
+  if (isEmbedded) {
+    return (
+      <main style={pageStyle}>
+        <section style={{ ...panelStyle, textAlign: 'center' }}>
+          <p
+            style={{
+              color: 'var(--accent)',
+              fontSize: 12,
+              letterSpacing: '0.08em',
+              margin: 0,
+            }}
+          >
+            SOON YOUTUBE STORYBOARD
+          </p>
+          <h1 style={{ margin: '8px 0 12px', fontSize: 28 }}>
+            未有可用劇本
+          </h1>
+          <p style={{ color: 'var(--muted)', lineHeight: 1.7, margin: 0 }}>
+            請先到 YouTube 劇本工作台生成劇本，然後按「推去分鏡」。
+            系統會自動帶入劇本並開啟分鏡編輯頁。
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              window.parent.postMessage(
+                {
+                  type: 'SOON_NAVIGATE_TOOL',
+                  pipeline: 'youtube',
+                  tool: 'script',
+                },
+                '*'
+              )
+            }}
+            style={{
+              margin: '10px auto 0',
+              border: 0,
+              borderRadius: 8,
+              background: 'var(--accent)',
+              color: '#fff',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: 600,
+              padding: '10px 18px',
+            }}
+          >
+            去 YouTube 劇本工作台
+          </button>
+        </section>
+      </main>
+    )
+  }
 
   async function handleImportFile(file: File) {
     setImporting(true)
