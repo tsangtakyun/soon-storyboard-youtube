@@ -1,6 +1,17 @@
 :root {
+  --soon-bg: #0a0a0f;
+  --soon-surface: #16161f;
+  --soon-surface2: #111118;
+  --soon-border: #2a2a3a;
+  --soon-purple: #7c5cfc;
+  --soon-purple-light: #a78bfa;
+  --soon-success: #10b981;
+  --soon-text: #f0f0f5;
+  --soon-text-secondary: #9090a8;
+  --soon-text-muted: #5a5a72;
   --bg: var(--soon-bg);
   --panel: var(--soon-surface);
+  --surface2: var(--soon-surface2);
   --line: var(--soon-border);
   --ink: var(--soon-text);
   --muted: var(--soon-text-secondary);
@@ -14,7 +25,7 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: #0a0a0f;
   color: var(--ink);
   font-family: system-ui, sans-serif;
 }

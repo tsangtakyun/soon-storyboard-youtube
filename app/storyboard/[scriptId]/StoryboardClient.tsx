@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useDebouncedCallback } from 'use-debounce'
 
 import { ShotList } from '@/components/ShotList'
@@ -39,12 +39,13 @@ const pageStyle: React.CSSProperties = {
   padding: 24,
   display: 'grid',
   gap: 18,
+  background: '#0a0a0f',
 }
 
 const panelStyle: React.CSSProperties = {
   border: '1px solid var(--line)',
   background: 'var(--panel)',
-  borderRadius: 8,
+  borderRadius: 12,
   padding: 18,
 }
 
@@ -57,8 +58,8 @@ const twoColumnStyle: React.CSSProperties = {
 
 const buttonStyle: React.CSSProperties = {
   border: '1px solid var(--line)',
-  borderRadius: 6,
-  background: '#26305a',
+  borderRadius: 8,
+  background: 'var(--surface2)',
   color: 'var(--ink)',
   padding: '11px 14px',
   cursor: 'pointer',
@@ -95,7 +96,7 @@ function formatCoverageError(data: any) {
     .join('\n')
 
   return [
-    'AI 生成失敗：script fidelity validation 未通過。',
+    'AI 生成未通過 script fidelity validation。',
     `Forward coverage: ${((data.coverage.forwardRatio ?? 0) * 100).toFixed(1)}%`,
     `Reverse coverage: ${((data.coverage.reverseRatio ?? 0) * 100).toFixed(1)}%`,
     '',
@@ -104,7 +105,7 @@ function formatCoverageError(data: any) {
       ? `Hallucinated shots (${hallucinated.length}):\n${hallucinationPreview}`
       : '',
     '',
-    '可以用 Layer 2 default fallback，或者重新嘗試生成呢個 part。',
+    '你可以使用預設模板生成，或者逐個 part 重新生成。',
   ]
     .filter(Boolean)
     .join('\n')
@@ -223,13 +224,13 @@ export function StoryboardClient({
       })
       const data = await res.json()
       if (!res.ok || !data.success) {
-        throw new Error(data.error ?? 'Subject reference 儲存失敗')
+        throw new Error(data.error ?? '主題參考儲存失敗')
       }
       setReferenceStatus('saved')
       window.setTimeout(() => setReferenceStatus('idle'), 1200)
     } catch (err) {
       setReferenceStatus('idle')
-      setError(err instanceof Error ? err.message : 'Subject reference 儲存失敗')
+      setError(err instanceof Error ? err.message : '主題參考儲存失敗')
     }
   }, 1000)
 
@@ -299,6 +300,20 @@ export function StoryboardClient({
     }
   }
 
+  function handlePushToProduction() {
+    window.parent.postMessage(
+      {
+        type: 'SOON_NAVIGATE_TOOL',
+        pipeline: 'youtube',
+        tool: 'production',
+        scriptId: script.id,
+        topic: script.topic || '',
+        title: script.title || '',
+      },
+      '*'
+    )
+  }
+
   async function handleAIGenerate() {
     setLoading(true)
     setError(null)
@@ -364,11 +379,11 @@ export function StoryboardClient({
       })
       const data = await res.json()
       if (!res.ok || !data.success) {
-        throw new Error(data.error ?? '生成預設 shots 失敗')
+        throw new Error(data.error ?? '建立預設 shots 失敗')
       }
       setShots(sortShots(data.shots))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生成預設 shots 失敗')
+      setError(err instanceof Error ? err.message : '建立預設 shots 失敗')
     } finally {
       setLoading(false)
     }
@@ -385,7 +400,7 @@ export function StoryboardClient({
           scriptPartRole: role,
           visualModeSlug: visualModes[0]?.slug ?? 'talking_head',
           footageSourceSlug: enabledFootageSources[0]?.slug ?? 'live_shoot',
-          description: '新 storyboard shot',
+          description: '新增 storyboard shot',
         }),
       })
       const data = await res.json()
@@ -452,81 +467,168 @@ export function StoryboardClient({
 
   return (
     <main style={pageStyle}>
-      <section style={panelStyle}>
-        <p className="soon-hide-embedded" style={{ color: 'var(--accent)', fontSize: 12, letterSpacing: '0.08em' }}>
-          SOON STORYBOARD
-        </p>
+      <section>
         <div
           style={{
             display: 'flex',
             justifyContent: 'space-between',
-            gap: 12,
             alignItems: 'flex-start',
-            flexWrap: 'wrap',
+            gap: 12,
+            marginBottom: 12,
           }}
         >
           <div>
-            <h1 style={{ margin: '8px 0 10px', fontSize: 30 }}>
-              {script.title ?? script.topic}
+            <p style={{ fontSize: 12, color: '#5a5a72', margin: '0 0 4px' }}>
+              SOON 創作工作台
+            </p>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: '#f0f0f5', margin: 0 }}>
+              {script.title || script.topic || 'YouTube 分鏡工作台'}
             </h1>
-            <p style={{ color: 'var(--muted)', margin: 0 }}>
-              Script ID: <code>{script.id}</code> · Storyboard ID:{' '}
-              <code>{storyboard.id}</code>
+            <p style={{ fontSize: 13, color: '#9090a8', margin: '4px 0 0' }}>
+              選擇每段拍攝方法，完成後推去製作清單
             </p>
           </div>
-          <button
-            type="button"
-            style={buttonStyle}
-            onClick={handleExportJSON}
-            disabled={exporting}
-          >
-            {exporting ? 'Exporting...' : 'Export JSON'}
-          </button>
-          <button
-            type="button"
-            style={{ ...buttonStyle, background: '#31533f' }}
-            onClick={handleDriveExport}
-            disabled={driveExporting}
-          >
-            {driveExporting ? 'Exporting Drive...' : 'Export Drive Doc'}
-          </button>
-          {driveDocUrl && (
-            <a
-              href={driveDocUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: 'var(--accent)', alignSelf: 'center' }}
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={handleExportJSON}
+              disabled={exporting}
+              style={{
+                background: 'transparent',
+                border: '1px solid #2a2a3a',
+                color: '#9090a8',
+                borderRadius: 8,
+                padding: '8px 12px',
+                fontSize: 12,
+                cursor: exporting ? 'not-allowed' : 'pointer',
+              }}
             >
-              Open latest Doc
-            </a>
-          )}
+              📦 {exporting ? 'Exporting...' : 'Export JSON'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDriveExport}
+              disabled={driveExporting}
+              style={{
+                background: 'transparent',
+                border: '1px solid #0ea5e9',
+                color: '#0ea5e9',
+                borderRadius: 8,
+                padding: '8px 12px',
+                fontSize: 12,
+                cursor: driveExporting ? 'not-allowed' : 'pointer',
+              }}
+            >
+              ☁️ {driveExporting ? 'Exporting...' : 'Drive Doc'}
+            </button>
+            <button
+              type="button"
+              onClick={handlePushToProduction}
+              style={{
+                background: '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: 8,
+                padding: '8px 16px',
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              🎬 推去製作清單
+            </button>
+          </div>
         </div>
+
         <div
           style={{
-            marginTop: 16,
-            borderTop: '1px solid var(--line)',
-            paddingTop: 14,
-            display: 'grid',
-            gap: 8,
+            width: '100%',
+            height: 120,
+            background:
+              'linear-gradient(135deg, #0d0d1a 0%, #1a1030 40%, #0a1628 100%)',
+            borderRadius: 12,
+            marginBottom: 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+            overflow: 'hidden',
           }}
         >
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background:
+                'radial-gradient(ellipse at 30% 50%, rgba(124,92,252,0.15) 0%, transparent 60%), radial-gradient(ellipse at 70% 50%, rgba(16,185,129,0.1) 0%, transparent 60%)',
+            }}
+          />
+          <p
+            style={{
+              fontSize: 12,
+              color: 'rgba(255,255,255,0.3)',
+              letterSpacing: '0.2em',
+              fontWeight: 500,
+              position: 'relative',
+            }}
+          >
+            YOUTUBE STORYBOARD
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+          {['題材工作台', '劇本工作台', '分鏡工作台'].map((label, index) => (
+            <Fragment key={label}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: '50%',
+                    background: index === 2 ? '#7c5cfc' : 'transparent',
+                    border: index === 2 ? 'none' : '1px solid #3a3a50',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 11,
+                    color: index === 2 ? 'white' : '#5a5a72',
+                    fontWeight: index === 2 ? 600 : 400,
+                  }}
+                >
+                  {index + 1}
+                </div>
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: index === 2 ? '#f0f0f5' : '#5a5a72',
+                    fontWeight: index === 2 ? 500 : 400,
+                  }}
+                >
+                  {label}
+                </span>
+              </div>
+              {index < 2 && <div style={{ flex: 1, height: 1, background: '#2a2a3a' }} />}
+            </Fragment>
+          ))}
+        </div>
+
+        <div style={{ ...panelStyle, display: 'grid', gap: 8 }}>
           <label htmlFor="subject-reference" style={{ fontWeight: 700 }}>
-            Subject reference
+            主題參考
           </label>
           <p style={{ color: 'var(--muted)', margin: 0, lineHeight: 1.55 }}>
-            餐廳名、事件、人名、年份。Internet prompt 會用呢個做 Gemini search
-            anchor。
+            提供餐廳、事件、人名或年份等搜尋線索，AI 會用作生成分鏡時嘅參考。
           </p>
           <input
             id="subject-reference"
             type="text"
             value={subjectReference}
-            placeholder="e.g. Jian Zao Ipoh Curry Noodle, Singapore"
+            placeholder="例：餐廳名、事件、人名、年份（AI 會用呢個做搜尋參考）"
             style={{
               border: '1px solid var(--line)',
-              borderRadius: 6,
-              background: '#fff',
-              color: '#000',
+              borderRadius: 8,
+              background: '#111118',
+              color: '#f0f0f5',
               padding: '10px 12px',
               maxWidth: 720,
             }}
@@ -539,11 +641,21 @@ export function StoryboardClient({
           />
           <span style={{ color: 'var(--muted)', fontSize: 12 }}>
             {referenceStatus === 'saving'
-              ? 'Saving reference...'
+              ? '儲存中...'
               : referenceStatus === 'saved'
-                ? 'Reference saved'
+                ? '已儲存'
                 : ' '}
           </span>
+          {driveDocUrl && (
+            <a
+              href={driveDocUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'var(--accent)', fontSize: 12 }}
+            >
+              開啟最新 Drive 文件
+            </a>
+          )}
         </div>
       </section>
 
@@ -562,7 +674,7 @@ export function StoryboardClient({
 
       <div style={twoColumnStyle}>
         <aside style={{ ...panelStyle, position: 'sticky', top: 16 }}>
-          <h2 style={{ marginTop: 0 }}>Script parts</h2>
+          <h2 style={{ marginTop: 0 }}>劇本段落</h2>
           <div style={{ display: 'grid', gap: 12 }}>
             {script.parts.map((part) => {
               const isExpanded = expandedParts.has(part.order)
@@ -570,7 +682,7 @@ export function StoryboardClient({
               const displayContent =
                 isExpanded || !shouldTruncate
                   ? part.content
-                  : `${part.content.slice(0, 220)}⋯`
+                  : `${part.content.slice(0, 220)}...`
 
               return (
                 <article
@@ -601,7 +713,7 @@ export function StoryboardClient({
                       style={{ ...buttonStyle, marginTop: 10, padding: '8px 10px' }}
                       onClick={() => togglePart(part.order)}
                     >
-                      {isExpanded ? '收起' : '展開全文'}
+                      {isExpanded ? '收合' : '展開全文'}
                     </button>
                   )}
                 </article>
@@ -622,7 +734,7 @@ export function StoryboardClient({
           >
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <h2 style={{ margin: 0 }}>Storyboard</h2>
+                <h2 style={{ margin: 0 }}>分鏡板</h2>
                 {coverage && (
                   <span
                     style={{
@@ -640,8 +752,8 @@ export function StoryboardClient({
                 )}
               </div>
               <p style={{ color: 'var(--muted)', margin: '6px 0 0' }}>
-                {shots.length} shots · Visual modes {visualModes.length} · Footage
-                sources {footageSources.length}
+                {shots.length} 個鏡頭 · {visualModes.length} 個拍攝模式 ·{' '}
+                {footageSources.length} 個素材來源
               </p>
             </div>
 
@@ -653,7 +765,7 @@ export function StoryboardClient({
                   onClick={handleAIGenerate}
                   disabled={loading}
                 >
-                  {loading ? 'AI 生成中 30-60 秒...' : 'AI 生成 storyboard'}
+                  {loading ? 'AI 生成中，約 30-60 秒...' : 'AI 生成 storyboard'}
                 </button>
                 <button
                   type="button"
@@ -661,7 +773,7 @@ export function StoryboardClient({
                   onClick={handleSeed}
                   disabled={loading}
                 >
-                  用 Layer 2 default 生成
+                  預設模板生成
                 </button>
               </div>
             )}
@@ -669,8 +781,7 @@ export function StoryboardClient({
 
           {shots.length === 0 ? (
             <p style={{ color: 'var(--muted)', lineHeight: 1.7 }}>
-              呢個 storyboard 暫時未有 shot。可以用 AI 生成 content-aware storyboard，
-              或用 Layer 2 default fallback。
+              未有 storyboard shots。你可以使用 AI 生成內容感知分鏡，或者先用預設模板建立基本分鏡。
             </p>
           ) : (
             <div style={{ display: 'grid', gap: 14, marginTop: 16 }}>
