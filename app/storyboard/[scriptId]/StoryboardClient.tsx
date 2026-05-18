@@ -306,6 +306,7 @@ export function StoryboardClient({
         type: 'SOON_NAVIGATE_TOOL',
         pipeline: 'youtube',
         tool: 'production',
+        storyboardId: storyboard.id,
         scriptId: script.id,
         topic: script.topic || '',
         title: script.title || '',
