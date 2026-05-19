@@ -541,41 +541,19 @@ export function StoryboardClient({
           </div>
         </div>
 
-        <div
+        <img
+          src="/storyboard-youtube-banner.jpg"
+          alt="YouTube 分鏡工作台"
           style={{
             width: '100%',
             height: 120,
-            background:
-              'linear-gradient(135deg, #0d0d1a 0%, #1a1030 40%, #0a1628 100%)',
+            objectFit: 'cover',
+            objectPosition: 'center',
             borderRadius: 12,
+            display: 'block',
             marginBottom: 14,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            position: 'relative',
-            overflow: 'hidden',
           }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background:
-                'radial-gradient(ellipse at 30% 50%, rgba(124,92,252,0.15) 0%, transparent 60%), radial-gradient(ellipse at 70% 50%, rgba(16,185,129,0.1) 0%, transparent 60%)',
-            }}
-          />
-          <p
-            style={{
-              fontSize: 12,
-              color: 'rgba(255,255,255,0.3)',
-              letterSpacing: '0.2em',
-              fontWeight: 500,
-              position: 'relative',
-            }}
-          >
-            YOUTUBE STORYBOARD
-          </p>
-        </div>
+        />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
           {['題材工作台', '劇本工作台', '分鏡工作台'].map((label, index) => (
